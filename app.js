@@ -32,7 +32,7 @@ connectCloudinary();
 // ── CORS ── allow your frontend origin (update in production)
 app.use(
   cors({
-    origin: config.frontendUrl || "http://localhost:5173", // Live Server default
+    origin: config.frontendUrl || "https://radhana-frontend-73xp.onrender.com/", // Live Server default
     credentials: true, // allow cookies
   }),
 );
