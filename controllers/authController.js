@@ -4,8 +4,8 @@ import { createJWT } from "../utils/jwt.js";
 const cookieOptions = {
   httpOnly: true, // JS can't read it (XSS protection)
   maxAge: 86400 * 1000, // 1 day in ms
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
+  sameSite: "None",
+  secure: true,
 };
 
 const login = async (req, res) => {
