@@ -5,7 +5,7 @@ import Order from "../models/Order.js";
 const generateInvoiceNumber = async (type) => {
   const prefix = type === "quotation" ? "QT" : "INV";
   const count = await Invoice.countDocuments({ type });
-  return `${prefix}-${String(count + 1).padStart(4, "0")}`;
+  return `${prefix}-${Math.floor(1000 + Math.random() * 9000)}-${count + 1}`;
 };
 
 const computeTotals = (
