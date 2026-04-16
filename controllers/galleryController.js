@@ -12,8 +12,16 @@ const getGallery = async (req, res) => {
 
 const createGalleryItem = async (req, res) => {
   try {
+    // Extract images from req.files (which comes from upload.fields())
     const imageFiles = req.files?.images || [];
     
+    // Validate that images are provided
+    if (!Array.isArray(imageFiles) || imageFiles.length === 0) {
+      return res.status(400).json({ 
+        message: "Please upload the image. At least one image is required." 
+      });
+    }
+
     const data = await galleryService.createGalleryItem(
       req.body,
       imageFiles,
@@ -27,8 +35,16 @@ const createGalleryItem = async (req, res) => {
 
 const updateGalleryItem = async (req, res) => {
   try {
+    // Extract images from req.files (which comes from upload.fields())
     const imageFiles = req.files?.images || [];
     
+    // Validate that imageFiles is an array if provided
+    if (imageFiles && !Array.isArray(imageFiles)) {
+      return res.status(400).json({ 
+        message: "Invalid file format" 
+      });
+    }
+
     const data = await galleryService.updateGalleryItem(
       req.params.id,
       req.body,

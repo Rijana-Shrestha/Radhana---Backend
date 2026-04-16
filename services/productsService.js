@@ -61,25 +61,65 @@ const getProductById = async (id) => {
 };
 
 const createProduct = async (data, files, createdBy) => {
-  let imageUrls = [];
+  try {
+    // Validate required fields
+    if (!data.name || !data.category || !data.price) {
+      throw {
+        statusCode: 400,
+        message: "Missing required fields: name, category, price"
+      };
+    }
 
-  if (files && files.length > 0) {
-    const uploaded = await uploadFile(files);
-    imageUrls = uploaded.map((item) => item?.secure_url || item?.url || "");
+    // Validate category is valid
+    const validCategories = ["wooden", "qr", "keyring", "award", "numberplate", "signboard", "neon", "mug", "leafart"];
+    if (!validCategories.includes(data.category)) {
+      throw {
+        statusCode: 400,
+        message: `Invalid category. Must be one of: ${validCategories.join(", ")}`
+      };
+    }
+
+    let imageUrls = [];
+
+    if (files && Array.isArray(files) && files.length > 0) {
+      try {
+        const uploaded = await uploadFile(files);
+        
+        if (!uploaded || uploaded.length === 0) {
+          throw {
+            statusCode: 400,
+            message: "Failed to upload images. Please upload the image and try again"
+          };
+        }
+
+        imageUrls = uploaded.map((item) => item?.secure_url || item?.url || "");
+      } catch (uploadError) {
+        // If error already has statusCode, re-throw it
+        if (uploadError.statusCode) throw uploadError;
+        
+        throw {
+          statusCode: 400,
+          message: uploadError.message || "Failed to upload images"
+        };
+      }
+    }
+
+    const created = await Product.create({
+      ...data,
+      createdBy,
+      imageUrls,
+      price: Number(data.price),
+      maxPrice: Number(data.maxPrice) || 0,
+      stock: Number(data.stock) || 99,
+      popular: data.popular === "true" || data.popular === true,
+      inStock: data.inStock !== "false" && data.inStock !== false,
+    });
+
+    return created;
+  } catch (error) {
+    console.error("Error in createProduct service:", error.message || error);
+    throw error;
   }
-
-  const created = await Product.create({
-    ...data,
-    createdBy,
-    imageUrls,
-    price: Number(data.price),
-    maxPrice: Number(data.maxPrice) || 0,
-    stock: Number(data.stock) || 99,
-    popular: data.popular === "true" || data.popular === true,
-    inStock: data.inStock !== "false" && data.inStock !== false,
-  });
-
-  return created;
 };
 
 const updateProduct = async (id, data, files, user) => {
@@ -95,11 +135,29 @@ const updateProduct = async (id, data, files, user) => {
 
   const updateData = { ...data };
 
-  if (files && files.length > 0) {
-    const uploaded = await uploadFile(files);
-    updateData.imageUrls = uploaded.map(
-      (item) => item?.secure_url || item?.url || "",
-    );
+  if (files && Array.isArray(files) && files.length > 0) {
+    try {
+      const uploaded = await uploadFile(files);
+      
+      if (!uploaded || uploaded.length === 0) {
+        throw {
+          statusCode: 400,
+          message: "Failed to upload images. Please try again"
+        };
+      }
+
+      updateData.imageUrls = uploaded.map(
+        (item) => item?.secure_url || item?.url || "",
+      );
+    } catch (uploadError) {
+      // If error already has statusCode, re-throw it
+      if (uploadError.statusCode) throw uploadError;
+      
+      throw {
+        statusCode: 400,
+        message: uploadError.message || "Failed to upload images"
+      };
+    }
   }
 
   if (updateData.price) updateData.price = Number(updateData.price);

@@ -12,17 +12,35 @@ async function uploadFile(files) {
 
   for (const file of files) {
     try {
+      // Validate file buffer exists
+      if (!file.buffer) {
+        throw new Error(`File buffer is undefined for file: ${file.originalname || "unknown"}`);
+      }
+
       const result = await new Promise((resolve, reject) => {
-        cloudinary.uploader
-          .upload_stream({ folder: CLOUDINARY_FOLDER }, (error, data) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { 
+            folder: CLOUDINARY_FOLDER,
+            resource_type: "auto"
+          },
+          (error, data) => {
             if (error) {
               console.error("Cloudinary upload error:", error);
               return reject(error);
             }
             resolve(data);
-          })
-          .end(file.buffer);
+          }
+        );
+
+        // Handle stream errors
+        uploadStream.on('error', (err) => {
+          console.error("Upload stream error:", err);
+          reject(err);
+        });
+
+        uploadStream.end(file.buffer);
       });
+
       results.push(result);
     } catch (uploadError) {
       console.error("Error uploading file:", uploadError.message || uploadError);
