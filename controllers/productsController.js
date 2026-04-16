@@ -21,6 +21,18 @@ const getProductById = async (req, res) => {
 
 const createProduct = async (req, res) => {
   try {
+    // Validate required fields
+    if (!req.body.name || !req.body.category || !req.body.price) {
+      return res.status(400).json({ 
+        message: "Missing required fields: name, category, price" 
+      });
+    }
+
+    // Validate user is authenticated
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
     const data = await productsService.createProduct(
       req.body,
       req.files,
@@ -28,7 +40,12 @@ const createProduct = async (req, res) => {
     );
     res.status(201).json(data);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    console.error("Error creating product:", error.message || error);
+    console.error("Stack trace:", error.stack);
+    res.status(error.statusCode || 500).json({ 
+      message: error.message || "Failed to create product",
+      ...(process.env.NODE_ENV === 'development' && { error: error.toString() })
+    });
   }
 };
 
