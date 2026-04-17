@@ -17,8 +17,8 @@ const config = {
     apiSecret:
       process.env.CLOUDINARY_API_SECRET || "ohEBwzyrzDhXE3LPYltExYxlwTc",
   },
-  googleClientId:process.env.GOOGLE_CLIENT_ID ,
-  googleClientSecret:process.env.GOOGLE_CLIENT_SECRET ,
+  googleClientId:process.env.GOOGLE_CLIENT_ID,
+  googleClientSecret:process.env.GOOGLE_CLIENT_SECRET,
 
   khalti: {
     apiKey: process.env.KHALTI_API_KEY || "",
