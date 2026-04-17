@@ -1,6 +1,7 @@
 import authService from "../services/authService.js";
 import { createJWT } from "../utils/jwt.js";
-
+import {generateCodeVerifier, generateState, Google} from "arctic"
+import { google } from "../utils/oauth/google.js";
 const cookieOptions = {
   httpOnly: true, // JS can't read it (XSS protection)
   maxAge: 86400 * 1000, // 1 day in ms
@@ -91,6 +92,29 @@ const getMe = async (req, res) => {
   res.json(req.user);
 };
 
+const getGoogleLoginPage = async (req, res) => {
+  if(req.user){
+    return res.redirect('/');
+  }
+  const state = generateState();
+  const  codeVerifier= generateCodeVerifier();
+  const url= google.createAuthorizationUrl(state, codeVerifier,[
+    "openid",
+    "profile",
+    "email"
+  ])
+  const cookieConfig = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
+    maxAge: 10 * 60 * 1000, // 10 minutes
+  };
+  res.cookie("oauthState", state, cookieConfig);
+  res.cookie("codeVerifier", codeVerifier, cookieConfig);
+
+  res.redirect(url.toString());
+}
+
 export default {
   login,
   register,
@@ -98,4 +122,5 @@ export default {
   resetPassword,
   logout,
   getMe,
+  getGoogleLoginPage
 };
