@@ -2,6 +2,7 @@ import authService from "../services/authService.js";
 import { createJWT } from "../utils/jwt.js";
 import {generateCodeVerifier, generateState, Google} from "arctic"
 import { google } from "../utils/oauth/google.js";
+import config from "../config/config.js";
 const cookieOptions = {
   httpOnly: true, // JS can't read it (XSS protection)
   maxAge: 86400 * 1000, // 1 day in ms
@@ -113,7 +114,67 @@ const getGoogleLoginPage = async (req, res) => {
   res.cookie("codeVerifier", codeVerifier, cookieConfig);
 
   res.redirect(url.toString());
-}
+};
+
+const googleCallback = async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    
+    if (!code || !state) {
+      return res.status(400).json({ message: "Missing authorization code or state." });
+    }
+
+    // Validate state
+    const storedState = req.cookies.oauthState;
+    if (state !== storedState) {
+      return res.status(400).json({ message: "Invalid state parameter." });
+    }
+
+    const codeVerifier = req.cookies.codeVerifier;
+    if (!codeVerifier) {
+      return res.status(400).json({ message: "Missing code verifier." });
+    }
+
+    // Exchange code for tokens
+    const tokens = await google.validateAuthorizationCode(code, codeVerifier);
+    
+    // Get user info from Google
+    const googleUserResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+      headers: {
+        Authorization: `Bearer ${tokens.accessToken}`,
+      },
+    });
+
+    if (!googleUserResponse.ok) {
+      throw { statusCode: 400, message: "Failed to fetch user info from Google." };
+    }
+
+    const googleUser = await googleUserResponse.json();
+
+    // Login or create user
+    const user = await authService.oauthLogin("google", googleUser.sub, {
+      email: googleUser.email,
+      name: googleUser.name,
+      picture: googleUser.picture,
+    });
+
+    // Create auth token
+    const authToken = createJWT(user);
+
+    // Set auth cookie
+    res.cookie("authToken", authToken, cookieOptions);
+
+    // Clear OAuth cookies
+    res.clearCookie("oauthState");
+    res.clearCookie("codeVerifier");
+
+    // Redirect to frontend home page
+    res.redirect(config.frontendUrl);
+  } catch (error) {
+    console.error("Google callback error:", error);
+    res.redirect(`${config.frontendUrl}login?error=${encodeURIComponent(error.message || 'Authentication failed')}`);
+  }
+};
 
 export default {
   login,
@@ -122,5 +183,6 @@ export default {
   resetPassword,
   logout,
   getMe,
-  getGoogleLoginPage
+  getGoogleLoginPage,
+  googleCallback
 };

@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import ResetPassword from "../models/ResetPassword.js";
+import OauthAccount from "../models/OauthAccount.js";
 import bcrypt from "bcryptjs";
 import sendEmail from "../utils/email.js";
 import config from "../config/config.js";
@@ -123,4 +124,51 @@ const resetPassword = async (userId, token, newPassword) => {
   return { message: "Password reset successfully." };
 };
 
-export default { register, login, forgotPassword, resetPassword };
+const oauthLogin = async (provider, providerAccountId, profile) => {
+  // Check if OAuth account exists
+  let oauthAccount = await OauthAccount.findOne({
+    provider,
+    providerAccountId,
+  });
+
+  let user;
+
+  if (oauthAccount) {
+    // User already linked with this OAuth provider
+    user = await User.findById(oauthAccount.userId);
+  } else {
+    // Check if user exists by email
+    user = await User.findOne({ email: profile.email.toLowerCase() });
+
+    if (!user) {
+      // Create new user for OAuth
+      const generatedPassword = crypto.randomBytes(32).toString('hex');
+      const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
+
+      user = await User.create({
+        name: profile.name || profile.email.split('@')[0],
+        email: profile.email,
+        password: hashedPassword,
+        phone: profile.phone || "",
+        address: { city: "", province: "", country: "Nepal" },
+        roles: ["USER"],
+        profileImageUrl: profile.picture || "",
+      });
+    }
+
+    // Link OAuth account to user
+    await OauthAccount.create({
+      provider,
+      providerAccountId,
+      userId: user._id,
+    });
+  }
+
+  if (!user) {
+    throw { statusCode: 404, message: "User not found." };
+  }
+
+  return safeUser(user);
+};
+
+export default { register, login, forgotPassword, resetPassword, oauthLogin };
