@@ -96,7 +96,7 @@ const getMe = async (req, res) => {
 const getGoogleLoginPage = async (req, res) => {
   try {
     // Check if Google credentials are configured
-    if (!config.googleClientId || !config.googleClientSecret || !google) {
+    if (!config.googleClientId || !config.googleClientSecret) {
       return res.status(500).json({ 
         message: "Google OAuth is not configured. Please contact the administrator to set up Google OAuth credentials." 
       });
