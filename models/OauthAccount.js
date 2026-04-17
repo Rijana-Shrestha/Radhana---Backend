@@ -18,6 +18,6 @@ const OauthAccountSchema = new Schema({
     }
 }, { timestamps: true });
 
-const OauthAccount = Schema.model('OauthAccount', OauthAccountSchema);
+const OauthAccount = mongoose.model('OauthAccount', OauthAccountSchema);
 
 export default OauthAccount;
