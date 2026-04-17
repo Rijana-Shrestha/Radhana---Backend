@@ -94,26 +94,38 @@ const getMe = async (req, res) => {
 };
 
 const getGoogleLoginPage = async (req, res) => {
-  if(req.user){
-    return res.redirect('/');
-  }
-  const state = generateState();
-  const  codeVerifier= generateCodeVerifier();
-  const url= google.createAuthorizationUrl(state, codeVerifier,[
-    "openid",
-    "profile",
-    "email"
-  ])
-  const cookieConfig = {
-    httpOnly: true,
-    secure: true,
-    sameSite: "None",
-    maxAge: 10 * 60 * 1000, // 10 minutes
-  };
-  res.cookie("oauthState", state, cookieConfig);
-  res.cookie("codeVerifier", codeVerifier, cookieConfig);
+  try {
+    // Check if Google credentials are configured
+    if (!config.googleClientId || !config.googleClientSecret || !google) {
+      return res.status(500).json({ 
+        message: "Google OAuth is not configured. Please contact the administrator to set up Google OAuth credentials." 
+      });
+    }
 
-  res.redirect(url.toString());
+    if(req.user){
+      return res.redirect('/');
+    }
+    const state = generateState();
+    const  codeVerifier= generateCodeVerifier();
+    const url= google.createAuthorizationUrl(state, codeVerifier,[
+      "openid",
+      "profile",
+      "email"
+    ])
+    const cookieConfig = {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+      maxAge: 10 * 60 * 1000, // 10 minutes
+    };
+    res.cookie("oauthState", state, cookieConfig);
+    res.cookie("codeVerifier", codeVerifier, cookieConfig);
+
+    res.redirect(url.toString());
+  } catch (error) {
+    console.error("Google login error:", error);
+    res.status(500).json({ message: "Failed to initiate Google login: " + error.message });
+  }
 };
 
 const googleCallback = async (req, res) => {
