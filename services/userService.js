@@ -1,6 +1,7 @@
 import { ADMIN } from "../constants/roles.js";
 import User from "../models/User.js";
 import uploadFile from "../utils/file.js";
+import bcrypt from "bcryptjs";
 
 const safeUser = (user) => {
   const u = user.toObject ? user.toObject() : user;
@@ -71,6 +72,43 @@ const getProfile = async (id) => {
   if (!user) throw { statusCode: 404, message: "User not found." };
   return user;
 };
+
+const changePassword = async (
+  id,
+  { currentPassword, newPassword, confirmPassword },
+  authUser,
+) => {
+  // Only the owner or an admin can change the password
+  const isOwner = id === authUser._id.toString();
+  const isAdmin = authUser.roles.includes(ADMIN);
+  if (!isOwner && !isAdmin) {
+    throw { statusCode: 403, message: "Access Denied." };
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    throw {
+      statusCode: 400,
+      message: "New password must be at least 6 characters.",
+    };
+  }
+  if (newPassword !== confirmPassword) {
+    throw { statusCode: 400, message: "New passwords do not match." };
+  }
+
+  const user = await User.findById(id);
+  if (!user) throw { statusCode: 404, message: "User not found." };
+
+  // Verify current password (admins changing their OWN password must verify too)
+  const isMatch = bcrypt.compareSync(currentPassword, user.password);
+  if (!isMatch) {
+    throw { statusCode: 400, message: "Current password is incorrect." };
+  }
+
+  const hashed = bcrypt.hashSync(newPassword, 10);
+  await User.findByIdAndUpdate(id, { password: hashed });
+  return { message: "Password changed successfully." };
+};
+
 export default {
   createUser,
   getUsers,
@@ -78,5 +116,6 @@ export default {
   updateUser,
   deleteUser,
   updateProfileImage,
-  getProfile
+  getProfile,
+  changePassword,
 };

@@ -63,15 +63,27 @@ const updateProfileImage = async (req, res) => {
     res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
-const getProfile = async (req, res)=>{
+const getProfile = async (req, res) => {
   try {
     const data = await userService.getProfile(req.user._id);
     res.json(data);
-  }
-  catch (error) {
+  } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message });
   }
-}
+};
+
+const changePassword = async (req, res) => {
+  try {
+    const data = await userService.changePassword(
+      req.params.id,
+      req.body,
+      req.user,
+    );
+    res.json(data);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
 
 export default {
   createUser,
@@ -80,6 +92,6 @@ export default {
   updateUser,
   deleteUser,
   updateProfileImage,
-  getProfile
-
+  getProfile,
+  changePassword,
 };

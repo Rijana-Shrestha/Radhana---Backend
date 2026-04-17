@@ -6,7 +6,6 @@ import { ADMIN } from "../constants/roles.js";
 
 const router = express.Router();
 
-
 // get profile (authenticated user only)
 router.get("/profile", auth, userController.getProfile);
 
@@ -19,5 +18,6 @@ router.delete("/:id", roleBasedAuth(ADMIN), userController.deleteUser);
 // User can update their own profile
 router.put("/:id", userController.updateUser);
 router.patch("/:id/profile-image", userController.updateProfileImage);
+router.patch("/:id/change-password", auth, userController.changePassword);
 
 export default router;
