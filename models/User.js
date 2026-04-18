@@ -45,6 +45,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -53,9 +57,9 @@ const userSchema = new mongoose.Schema({
 });
 
 // Drop existing indexes before recreating them
-userSchema.on('index', function(error) {
+userSchema.on("index", function (error) {
   if (error.code === 11000) {
-    console.warn('⚠ Duplicate key error - ensure unique email/phone');
+    console.warn("⚠ Duplicate key error - ensure unique email/phone");
   }
 });
 

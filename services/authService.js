@@ -1,11 +1,12 @@
 import User from "../models/User.js";
 import ResetPassword from "../models/ResetPassword.js";
+import OauthAccount from "../models/OauthAccount.js";
 import bcrypt from "bcryptjs";
-import sendEmail from "../utils/email.js";
+import sendEmail, { templates } from "../utils/email.js";
 import config from "../config/config.js";
 import crypto from "crypto";
 
-// Return safe user object (no password)
+// Return safe user object (no password, no sensitive fields)
 const safeUser = (user) => ({
   _id: user._id,
   name: user.name,
@@ -14,8 +15,14 @@ const safeUser = (user) => ({
   address: user.address,
   roles: user.roles,
   profileImageUrl: user.profileImageUrl,
+  twoFactorEnabled: user.twoFactorEnabled,
+  createdAt: user.createdAt,
 });
 
+// Generate a 6-digit numeric OTP
+const generateOTP = () => String(Math.floor(100000 + Math.random() * 900000));
+
+// ── LOGIN ─────────────────────────────────────────────────────
 const login = async (data) => {
   const user = await User.findOne({ email: data.email.toLowerCase() });
   if (!user) throw { statusCode: 404, message: "User not found." };
@@ -24,9 +31,58 @@ const login = async (data) => {
   if (!isMatch)
     throw { statusCode: 400, message: "Incorrect email or password." };
 
+  // If 2FA is enabled, send OTP instead of logging in immediately
+  if (user.twoFactorEnabled) {
+    const otp = generateOTP();
+    await OTP.deleteMany({ userId: user._id, isUsed: false }); // clear old OTPs
+    await OTP.create({ userId: user._id, code: otp });
+
+    const { subject, html } = templates.twoFactorOTP({ name: user.name, otp });
+    await sendEmail(user.email, { subject, html });
+
+    // Return a pending state — frontend must submit OTP to complete login
+    return {
+      twoFactorRequired: true,
+      userId: user._id,
+      message: "OTP sent to your registered email address.",
+    };
+  }
+
   return safeUser(user);
 };
 
+// ── VERIFY 2FA OTP ────────────────────────────────────────────
+const verifyTwoFactor = async (userId, code) => {
+  const record = await OTP.findOne({
+    userId,
+    isUsed: false,
+    expiresAt: { $gt: Date.now() },
+  }).sort({ expiresAt: -1 });
+
+  if (!record || record.code !== code) {
+    throw { statusCode: 400, message: "Invalid or expired OTP." };
+  }
+
+  await OTP.findByIdAndUpdate(record._id, { isUsed: true });
+
+  const user = await User.findById(userId);
+  if (!user) throw { statusCode: 404, message: "User not found." };
+
+  return safeUser(user);
+};
+
+// ── TOGGLE 2FA ────────────────────────────────────────────────
+const toggleTwoFactor = async (userId, enable) => {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { twoFactorEnabled: enable },
+    { new: true },
+  );
+  if (!user) throw { statusCode: 404, message: "User not found." };
+  return { twoFactorEnabled: user.twoFactorEnabled };
+};
+
+// ── REGISTER ──────────────────────────────────────────────────
 const register = async (data) => {
   const existing = await User.findOne({ email: data.email.toLowerCase() });
   if (existing)
@@ -43,67 +99,38 @@ const register = async (data) => {
     roles: data.roles || ["USER"],
   });
 
+  // Send welcome email (non-blocking)
+  const { subject, html } = templates.welcomeVerification({
+    name: created.name,
+    verifyLink: `${config.frontendUrl}/verify-email`,
+  });
+  sendEmail(created.email, { subject, html }).catch((err) =>
+    console.error("Welcome email error:", err),
+  );
+
   return safeUser(created);
 };
 
+// ── FORGOT PASSWORD ───────────────────────────────────────────
 const forgotPassword = async (email) => {
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) throw { statusCode: 404, message: "User not found." };
 
   const token = crypto.randomUUID();
-
   await ResetPassword.create({ userId: user._id, token });
 
-  const resetLink = `${config.frontendUrl}/reset-password.html?token=${token}&userId=${user._id}`;
+  const resetLink = `${config.frontendUrl}/reset-password?token=${token}&userId=${user._id}`;
 
-  await sendEmail(email, {
-    subject: "Reset Your Radhana Art Password",
-    body: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
-          .container { max-width: 600px; margin: 20px auto; background: #ffffff; padding: 40px; border-radius: 12px; }
-          .logo { text-align: center; margin-bottom: 24px; }
-          .logo-box { width: 60px; height: 60px; background: linear-gradient(135deg, #145faf, #D93A6A); border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; }
-          h2 { color: #145faf; text-align: center; font-family: Georgia, serif; }
-          p { color: #555; line-height: 1.6; font-size: 15px; }
-          .button-container { text-align: center; margin: 30px 0; }
-          .button { background: linear-gradient(135deg, #145faf, #D93A6A); color: white !important; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: bold; display: inline-block; font-size: 15px; }
-          .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; }
-          .expiry { font-size: 13px; color: #888; text-align: center; background: #f8f9fa; padding: 10px; border-radius: 8px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="logo">
-            <h2>🪷 Radhana Art</h2>
-            <p style="color:#888;font-size:12px;margin-top:-10px;">Laser Engraving · Kathmandu</p>
-          </div>
-          <h2>Reset Your Password</h2>
-          <p>Hello ${user.name},</p>
-          <p>We received a request to reset the password for your Radhana Art account. Click the button below to set a new password:</p>
-          <div class="button-container">
-            <a href="${resetLink}" class="button">Reset Password</a>
-          </div>
-          <p class="expiry">⏰ This link expires in <strong>1 hour</strong>.</p>
-          <p>If you didn't request this, you can safely ignore this email. Your password won't change.</p>
-          <hr style="border:0;border-top:1px solid #eee;margin:30px 0;">
-          <div class="footer">
-            © 2025 Radhana Art · Sitapaila, Kathmandu, Nepal<br>
-            📞 +977 9823939106 · radhanaart@gmail.com
-          </div>
-        </div>
-      </body>
-      </html>
-    `,
+  const { subject, html } = templates.resetPassword({
+    name: user.name,
+    resetLink,
   });
+  await sendEmail(email, { subject, html });
 
-  return { message: "Reset password link sent to your email." };
+  return { message: "Password reset link sent to your email." };
 };
 
+// ── RESET PASSWORD ────────────────────────────────────────────
 const resetPassword = async (userId, token, newPassword) => {
   const record = await ResetPassword.findOne({
     userId,
@@ -116,11 +143,67 @@ const resetPassword = async (userId, token, newPassword) => {
   }
 
   const hashedPassword = bcrypt.hashSync(newPassword, 10);
-
-  await User.findByIdAndUpdate(userId, { password: hashedPassword });
+  const user = await User.findByIdAndUpdate(userId, {
+    password: hashedPassword,
+  });
   await ResetPassword.findByIdAndUpdate(record._id, { isUsed: true });
+
+  // Notify user that password was changed
+  if (user) {
+    const { subject, html } = templates.passwordChanged({ name: user.name });
+    sendEmail(user.email, { subject, html }).catch((err) =>
+      console.error("Password changed email error:", err),
+    );
+  }
 
   return { message: "Password reset successfully." };
 };
 
-export default { register, login, forgotPassword, resetPassword };
+const oauthLogin = async (provider, providerAccountId, profile) => {
+  // Check if OAuth account exists
+  let oauthAccount = await OauthAccount.findOne({
+    provider,
+    providerAccountId,
+  });
+
+  let user;
+
+  if (oauthAccount) {
+    // User already linked with this OAuth provider
+    user = await User.findById(oauthAccount.userId);
+  } else {
+    // Check if user exists by email
+    user = await User.findOne({ email: profile.email.toLowerCase() });
+
+    if (!user) {
+      // Create new user for OAuth
+      const generatedPassword = crypto.randomBytes(32).toString("hex");
+      const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
+
+      user = await User.create({
+        name: profile.name || profile.email.split("@")[0],
+        email: profile.email,
+        password: hashedPassword,
+        phone: profile.phone || "",
+        address: { city: "", province: "", country: "Nepal" },
+        roles: ["USER"],
+        profileImageUrl: profile.picture || "",
+      });
+    }
+
+    // Link OAuth account to user
+    await OauthAccount.create({
+      provider,
+      providerAccountId,
+      userId: user._id,
+    });
+  }
+
+  if (!user) {
+    throw { statusCode: 404, message: "User not found." };
+  }
+
+  return safeUser(user);
+};
+
+export default { register, login, forgotPassword, resetPassword, oauthLogin };
