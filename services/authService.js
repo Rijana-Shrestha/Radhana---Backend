@@ -73,7 +73,7 @@ const forgotPassword = async (email) => {
   const token = crypto.randomUUID();
   await ResetPassword.create({ userId: user._id, token });
 
-  const resetLink = `${config.frontendUrl}/reset-password?token=${token}&userId=${user._id}`;
+  const resetLink = `${config.frontendUrl}/#/reset-password?token=${token}&userId=${user._id}`;
   const { subject, html } = templates.resetPassword({
     name: user.name,
     resetLink,
