@@ -29,8 +29,7 @@ const config = {
   khalti: {
     apiKey: process.env.KHALTI_API_KEY || "",
     apiUrl: process.env.KHALTI_API_URL || "https://dev.khalti.com/api/v2",
-    returnUrl:
-      process.env.KHALTI_RETURN_URL || `${appUrl}/api/orders/confirm-payment`,
+    returnUrl: process.env.KHALTI_RETURN_URL || `${frontendUrl}/payment/verify`,
   },
 
   backendUrl: appUrl,

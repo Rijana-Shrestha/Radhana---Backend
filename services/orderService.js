@@ -62,7 +62,11 @@ const deleteOrder = async (id, user) => {
   return await Order.findByIdAndDelete(id);
 };
 
-// ── KHALTI: initiate ─────────────────────────────────────────
+// ── KHALTI: Step 1 — Initiate payment ────────────────────────
+// Per Khalti docs:
+// - POST to /epayment/initiate/ with amount in PAISA
+// - Returns { pidx, payment_url } → redirect user to payment_url
+// - Khalti redirects user back to return_url with pidx, purchase_order_id, status
 const orderPayment = async (id, user) => {
   const order = await getOrderById(id);
   if (order.user._id.toString() !== user._id.toString())
@@ -78,8 +82,9 @@ const orderPayment = async (id, user) => {
 
   await Order.findByIdAndUpdate(id, { payment: orderPaymentDoc._id });
 
+  // amount * 100 converts NPR to paisa as required by Khalti docs
   const khaltiData = await paymentUtil.payViaKhalti({
-    amount: order.totalPrice * 100, // convert to paisa
+    amount: order.totalPrice * 100,
     purchaseOrderId: order._id.toString(),
     purchaseOrderName: order.orderNumber,
     customer: {
@@ -90,28 +95,31 @@ const orderPayment = async (id, user) => {
     },
   });
 
-  // Store pidx so we can verify later
+  // Save pidx for later lookup verification
   await Payment.findByIdAndUpdate(orderPaymentDoc._id, {
     pidx: khaltiData.pidx,
   });
 
-  // Return payment_url so frontend can redirect user
   return {
-    payment_url: khaltiData.payment_url,
+    payment_url: khaltiData.payment_url, // frontend redirects user here
     pidx: khaltiData.pidx,
     orderId: id,
   };
 };
 
-// ── KHALTI: verify after return ──────────────────────────────
+// ── KHALTI: Step 2 — Verify payment via Lookup API ───────────
+// Per Khalti docs:
+// - POST to /epayment/lookup/ with { pidx }
+// - ONLY status "Completed" means success — all others are failures
+// - Called by frontend's /payment/verify page after Khalti callback
 const verifyKhaltiPayment = async (pidx, orderId, user) => {
   const order = await getOrderById(orderId);
   if (order.user._id.toString() !== user._id.toString())
     throw { statusCode: 403, message: "Access Denied." };
 
-  // Call Khalti lookup API
   const khaltiResponse = await paymentUtil.verifyKhaltiPayment(pidx);
 
+  // Per docs: ONLY "Completed" = success. Pending/Expired/Canceled/Refunded = fail
   if (khaltiResponse.status !== "Completed") {
     await Payment.findByIdAndUpdate(order.payment._id, {
       status: PAYMENT_STATUS_FAILED,
@@ -122,7 +130,6 @@ const verifyKhaltiPayment = async (pidx, orderId, user) => {
     };
   }
 
-  // Update payment and order
   await Payment.findByIdAndUpdate(order.payment._id, {
     status: PAYMENT_STATUS_COMPLETED,
     transactionId: khaltiResponse.transaction_id,
@@ -153,7 +160,7 @@ const orderPaymentFonepay = async (id, user) => {
   await Order.findByIdAndUpdate(id, { payment: orderPaymentDoc._id });
 
   const { paymentUrl, params } = paymentUtil.initiateFonepay({
-    amount: order.totalPrice, // NPR (NOT paisa for Fonepay)
+    amount: order.totalPrice,
     purchaseOrderId: order.orderNumber,
     purchaseOrderName: order.orderNumber,
   });
@@ -196,7 +203,6 @@ const verifyFonepayPayment = async (callbackParams, orderId, user) => {
   );
 };
 
-// Legacy confirm (kept for backward compat)
 const confirmOrderPayment = async (id, status, user) => {
   const order = await getOrderById(id);
   if (
