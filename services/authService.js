@@ -140,14 +140,6 @@ const login = async (data) => {
   if (!isMatch)
     throw { statusCode: 400, message: "Incorrect email or password." };
 
-  // Block login if email not verified
-  if (!user.isVerified)
-    throw {
-      statusCode: 403,
-      message: "Please verify your email before logging in. Check your inbox.",
-      notVerified: true,
-    };
-
   return safeUser(user);
 };
 
