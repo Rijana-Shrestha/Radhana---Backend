@@ -17,15 +17,11 @@ const config = {
     apiSecret:
       process.env.CLOUDINARY_API_SECRET || "ohEBwzyrzDhXE3LPYltExYxlwTc",
   },
-<<<<<<< HEAD
-=======
   googleClientId:
     process.env.GOOGLE_CLIENT_ID ||
     "699930166750-2ifl12usok3o4munn1vhl5d0udtt75je.apps.googleusercontent.com",
   googleClientSecret:
     process.env.GOOGLE_CLIENT_SECRET || "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",
->>>>>>> 0986126f1f835e8954c621e25c09c0e7b485218c
-
   khalti: {
     apiKey: process.env.KHALTI_API_KEY || "",
     apiUrl: process.env.KHALTI_API_URL || "https://dev.khalti.com/api/v2",
@@ -52,3 +48,4 @@ const config = {
 };
 
 export default config;
+
