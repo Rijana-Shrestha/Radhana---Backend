@@ -118,27 +118,32 @@ const register = async (data) => {
   if (existing)
     throw { statusCode: 400, message: "User with this email already exists." };
 
-  const hashedPassword = bcrypt.hashSync(data.password, 10);
+  const token = crypto.randomUUID();
+  await EmailVerification.deleteMany({ email: data.email.toLowerCase() }); // Clear old requests
+  await EmailVerification.create({
+    email: data.email.toLowerCase(),
+    token,
+    userData: {
+      name: data.name,
+      phone: data.phone,
+      password: bcrypt.hashSync(data.password, 10),
+      address: data.address || { city: "", province: "", country: "Nepal" },
+    },
+  });
 
-  const created = await User.create({
+  const verifyLink = `${config.frontendUrl}/verify-email?token=${token}&email=${encodeURIComponent(data.email)}`;
+  const { subject, html } = templates.emailVerification({
     name: data.name,
+    verifyLink,
+  });
+  await sendEmail(data.email, { subject, html });
+
+  return {
+    pending_verification: true,
     email: data.email,
-    password: hashedPassword,
-    phone: data.phone,
-    address: data.address || { city: "", province: "", country: "Nepal" },
-    roles: data.roles || ["USER"],
-  });
-
-  // Send welcome email (non-blocking)
-  const { subject, html } = templates.welcomeVerification({
-    name: created.name,
-    verifyLink: `${config.frontendUrl}/verify-email`,
-  });
-  sendEmail(created.email, { subject, html }).catch((err) =>
-    console.error("Welcome email error:", err),
-  );
-
-  return safeUser(created);
+    token,
+    message: "Verification email sent. Please check your inbox.",
+  };
 };
 
 // ── FORGOT PASSWORD ───────────────────────────────────────────
