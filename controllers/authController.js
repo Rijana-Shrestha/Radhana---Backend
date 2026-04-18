@@ -95,99 +95,127 @@ const getMe = async (req, res) => {
 
 const getGoogleLoginPage = async (req, res) => {
   try {
-    // Check if Google credentials are configured
     if (!config.googleClientId || !config.googleClientSecret) {
-      return res.status(500).json({ 
-        message: "Google OAuth is not configured. Please contact the administrator to set up Google OAuth credentials." 
+      return res.status(500).json({
+        message: "Google OAuth is not configured."
       });
     }
 
-    if(req.user){
+    if (req.user) {
       return res.redirect('/');
     }
+
     const state = generateState();
-    const  codeVerifier= generateCodeVerifier();
-    const url= google.createAuthorizationUrl(state, codeVerifier,[
-      "openid",
-      "profile",
-      "email"
-    ])
-    const cookieConfig = {
+    const codeVerifier = generateCodeVerifier();
+
+    const url = google.createAuthorizationURL(
+      state,
+      codeVerifier,
+      ["openid", "profile", "email"]
+    );
+
+    res.cookie("oauthState", state, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "None",
-      maxAge: 10 * 60 * 1000, // 10 minutes
-    };
-    res.cookie("oauthState", state, cookieConfig);
-    res.cookie("codeVerifier", codeVerifier, cookieConfig);
+      maxAge: 10 * 60 * 1000
+    });
+
+    res.cookie("codeVerifier", codeVerifier, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "None",
+      maxAge: 10 * 60 * 1000
+    });
 
     res.redirect(url.toString());
+
   } catch (error) {
     console.error("Google login error:", error);
-    res.status(500).json({ message: "Failed to initiate Google login: " + error.message });
+    res.status(500).json({
+      message: "Failed to initiate Google login: " + error.message
+    });
   }
 };
 
 const googleCallback = async (req, res) => {
   try {
     const { code, state } = req.query;
-    
+
     if (!code || !state) {
       return res.status(400).json({ message: "Missing authorization code or state." });
     }
 
-    // Validate state
     const storedState = req.cookies.oauthState;
-    if (state !== storedState) {
+    const codeVerifier = req.cookies.codeVerifier;
+
+    if (!storedState || state !== storedState) {
       return res.status(400).json({ message: "Invalid state parameter." });
     }
 
-    const codeVerifier = req.cookies.codeVerifier;
     if (!codeVerifier) {
       return res.status(400).json({ message: "Missing code verifier." });
     }
 
-    // Exchange code for tokens
     const tokens = await google.validateAuthorizationCode(code, codeVerifier);
-    
-    // Get user info from Google
-    const googleUserResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
-      headers: {
-        Authorization: `Bearer ${tokens.accessToken}`,
-      },
-    });
+
+    const googleUserResponse = await fetch(
+      "https://openidconnect.googleapis.com/v1/userinfo",
+      {
+        headers: {
+          Authorization: `Bearer ${tokens.accessToken}`,
+        },
+      }
+    );
 
     if (!googleUserResponse.ok) {
-      throw { statusCode: 400, message: "Failed to fetch user info from Google." };
+      throw new Error("Failed to fetch user info from Google.");
     }
 
     const googleUser = await googleUserResponse.json();
 
-    // Login or create user
+    if (!googleUser.email_verified) {
+      throw new Error("Google email not verified.");
+    }
+
     const user = await authService.oauthLogin("google", googleUser.sub, {
       email: googleUser.email,
       name: googleUser.name,
       picture: googleUser.picture,
     });
 
-    // Create auth token
     const authToken = createJWT(user);
 
-    // Set auth cookie
-    res.cookie("authToken", authToken, cookieOptions);
+    res.cookie("authToken", authToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "None",
+    });
 
-    // Clear OAuth cookies
-    res.clearCookie("oauthState");
-    res.clearCookie("codeVerifier");
+    res.clearCookie("oauthState", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "None",
+    });
 
-    // Redirect to frontend home page
+    res.clearCookie("codeVerifier", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "None",
+    });
+
     res.redirect(config.frontendUrl);
+
   } catch (error) {
     console.error("Google callback error:", error);
-    res.redirect(`${config.frontendUrl}login?error=${encodeURIComponent(error.message || 'Authentication failed')}`);
+
+    res.redirect(
+      `${config.frontendUrl}/login?error=${encodeURIComponent(
+        error.message || "Authentication failed"
+      )}`
+    );
   }
 };
-
 export default {
   login,
   register,
