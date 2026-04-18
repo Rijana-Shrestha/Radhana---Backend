@@ -1,12 +1,11 @@
 import authService from "../services/authService.js";
 import { createJWT } from "../utils/jwt.js";
-import {generateCodeVerifier, generateState, Google} from "arctic"
-import { google } from "../utils/oauth/google.js";
+
 const cookieOptions = {
-  httpOnly: true, // JS can't read it (XSS protection)
-  maxAge: 86400 * 1000, // 1 day in ms
-  sameSite: "None",
-  secure: true,
+  httpOnly: true,
+  maxAge: 86400 * 1000, // 1 day
+  sameSite: "lax",
+  secure: process.env.NODE_ENV === "production",
 };
 
 const login = async (req, res) => {
@@ -17,9 +16,46 @@ const login = async (req, res) => {
       return res.status(400).json({ message: "Password is required." });
 
     const data = await authService.login({ email, password });
-    const authToken = createJWT(data);
 
+    // 2FA pending — don't set cookie yet
+    if (data.twoFactorRequired) {
+      return res.json(data);
+    }
+
+    const authToken = createJWT(data);
     res.cookie("authToken", authToken, cookieOptions);
+    res.json(data);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// POST /api/auth/verify-2fa
+const verifyTwoFactor = async (req, res) => {
+  try {
+    const { userId, code } = req.body;
+    if (!userId || !code)
+      return res.status(400).json({ message: "userId and code are required." });
+
+    const data = await authService.verifyTwoFactor(userId, code);
+    const authToken = createJWT(data);
+    res.cookie("authToken", authToken, cookieOptions);
+    res.json(data);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/auth/toggle-2fa  (auth required)
+const toggleTwoFactor = async (req, res) => {
+  try {
+    const { enable } = req.body;
+    if (typeof enable !== "boolean")
+      return res
+        .status(400)
+        .json({ message: "'enable' (boolean) is required." });
+
+    const data = await authService.toggleTwoFactor(req.user._id, enable);
     res.json(data);
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message });
@@ -33,13 +69,11 @@ const register = async (req, res) => {
       return res.status(400).json({ message: "Password is required." });
     if (!confirmPassword)
       return res.status(400).json({ message: "Confirm password is required." });
-    if (password !== confirmPassword) {
+    if (password !== confirmPassword)
       return res.status(400).json({ message: "Passwords do not match." });
-    }
 
     const data = await authService.register(req.body);
     const authToken = createJWT(data);
-
     res.cookie("authToken", authToken, cookieOptions);
     res.status(201).json(data);
   } catch (error) {
@@ -51,7 +85,6 @@ const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: "Email is required." });
-
     const data = await authService.forgotPassword(email);
     res.json(data);
   } catch (error) {
@@ -63,7 +96,6 @@ const resetPassword = async (req, res) => {
   try {
     const { token, userId } = req.query;
     const { password, confirmPassword } = req.body;
-
     if (!token || !userId)
       return res
         .status(400)
@@ -87,33 +119,9 @@ const logout = async (req, res) => {
   res.json({ message: "Logged out successfully." });
 };
 
-// GET /api/auth/me — returns current logged-in user from cookie
 const getMe = async (req, res) => {
   res.json(req.user);
 };
-
-const getGoogleLoginPage = async (req, res) => {
-  if(req.user){
-    return res.redirect('/');
-  }
-  const state = generateState();
-  const  codeVerifier= generateCodeVerifier();
-  const url= google.createAuthorizationUrl(state, codeVerifier,[
-    "openid",
-    "profile",
-    "email"
-  ])
-  const cookieConfig = {
-    httpOnly: true,
-    secure: true,
-    sameSite: "None",
-    maxAge: 10 * 60 * 1000, // 10 minutes
-  };
-  res.cookie("oauthState", state, cookieConfig);
-  res.cookie("codeVerifier", codeVerifier, cookieConfig);
-
-  res.redirect(url.toString());
-}
 
 export default {
   login,
@@ -121,6 +129,5 @@ export default {
   forgotPassword,
   resetPassword,
   logout,
-  getMe,
-  getGoogleLoginPage
+  getMe
 };

@@ -9,7 +9,6 @@ router.post("/login", authController.login);
 router.post("/logout", authController.logout);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
-router.get("/google", authController.getGoogleLoginPage);
 // Returns current user data — used by frontend to check login state
 router.get("/me", auth, authController.getMe);
 
