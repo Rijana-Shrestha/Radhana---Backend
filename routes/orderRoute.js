@@ -5,28 +5,24 @@ import { ADMIN } from "../constants/roles.js";
 
 const router = express.Router();
 
-// All routes already have auth applied globally in app.js
-
-// Admin: get all orders
+// All routes have auth applied globally in app.js
 router.get("/", roleBasedAuth(ADMIN), orderController.getOrders);
-
-// User: get their own orders
 router.get("/user", orderController.getOrdersByUser);
-
-// Admin: get single order
 router.get("/:id", roleBasedAuth(ADMIN), orderController.getOrderById);
-
-// Create order (any logged-in user)
 router.post("/", orderController.createOrder);
-
-// Update order status (admin) or cancel (user)
 router.put("/:id", roleBasedAuth(ADMIN), orderController.updateOrder);
-
-// Delete order
 router.delete("/:id", orderController.deleteOrder);
 
-// Khalti payment
+// ── Payment routes ─────────────────────────────────────────
+// Khalti
 router.post("/:id/payment/khalti", orderController.orderPaymentViaKhalti);
+router.get("/:id/verify-khalti", orderController.verifyKhaltiPayment);
+
+// Fonepay
+router.post("/:id/payment/fonepay", orderController.orderPaymentViaFonepay);
+router.get("/:id/verify-fonepay", orderController.verifyFonepayPayment);
+
+// Legacy confirm
 router.put("/:id/confirm-payment", orderController.confirmOrderPayment);
 
 export default router;

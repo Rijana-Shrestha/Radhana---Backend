@@ -45,7 +45,18 @@ const orderSchema = new mongoose.Schema({
   shippingAddress: {
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    phone: { type: String, required: true },
+    phone: {
+      type: String,
+      required: true,
+      validate: {
+        validator: function (v) {
+          const cleaned = v.replace(/[\s\-]/g, "");
+          return /^(\+977|977)?(98|97|96)\d{8}$/.test(cleaned);
+        },
+        message:
+          "Please enter a valid Nepali phone number (e.g. 9812345678 or +9779812345678).",
+      },
+    },
     email: { type: String, required: true },
     street: { type: String, required: true },
     city: { type: String, required: true },
@@ -73,10 +84,10 @@ const orderSchema = new mongoose.Schema({
     ref: "Payment",
   },
   invoice: {
-  type: mongoose.Types.ObjectId,
-  ref: "Invoice",
-  default: null,
-},
+    type: mongoose.Types.ObjectId,
+    ref: "Invoice",
+    default: null,
+  },
   isInvoiceGenerated: {
     type: Boolean,
     default: false,

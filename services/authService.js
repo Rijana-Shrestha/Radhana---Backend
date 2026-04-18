@@ -1,11 +1,10 @@
 import User from "../models/User.js";
 import ResetPassword from "../models/ResetPassword.js";
-import OauthAccount from "../models/OauthAccount.js";
-import EmailVerification from "../models/EmailVerification.js";
 import bcrypt from "bcryptjs";
 import sendEmail, { templates } from "../utils/email.js";
 import config from "../config/config.js";
 import crypto from "crypto";
+import { validateEmailFormat } from "../utils/validateEmail.js";
 
 const safeUser = (user) => ({
   _id: user._id,
@@ -16,12 +15,14 @@ const safeUser = (user) => ({
   roles: user.roles,
   profileImageUrl: user.profileImageUrl,
   isEmailVerified: user.isEmailVerified,
-  twoFactorEnabled: user.twoFactorEnabled,
   createdAt: user.createdAt,
 });
 
 // ── REGISTER ──────────────────────────────────────────────────
 const register = async (data) => {
+  if (!validateEmailFormat(data.email))
+    throw { statusCode: 400, message: "Please enter a valid email address." };
+
   const existing = await User.findOne({ email: data.email.toLowerCase() });
   if (existing)
     throw { statusCode: 400, message: "User with this email already exists." };
@@ -40,17 +41,26 @@ const register = async (data) => {
     emailVerifyToken: verifyToken,
   });
 
-  // Send branded verification email
   const verifyLink = `${config.frontendUrl}/verify-email?token=${verifyToken}&userId=${created._id}`;
   const { subject, html } = templates.welcomeVerification({
     name: created.name,
     verifyLink,
   });
-  sendEmail(created.email, { subject, html }).catch((err) =>
-    console.error("Welcome email error:", err),
-  );
 
-  // Return minimal info — NOT logged in yet
+  // Throw error so user knows email failed — don't silently swallow
+  try {
+    await sendEmail(created.email, { subject, html });
+  } catch (emailErr) {
+    // Clean up the created user so they can try again
+    await User.findByIdAndDelete(created._id);
+    console.error("Verification email failed:", emailErr);
+    throw {
+      statusCode: 500,
+      message:
+        "Failed to send verification email. Please check your email address and try again.",
+    };
+  }
+
   return {
     emailSent: true,
     email: created.email,
@@ -63,10 +73,8 @@ const register = async (data) => {
 const verifyEmail = async (userId, token) => {
   const user = await User.findById(userId);
   if (!user) throw { statusCode: 404, message: "User not found." };
-
   if (user.isEmailVerified)
     throw { statusCode: 400, message: "Email is already verified." };
-
   if (!user.emailVerifyToken || user.emailVerifyToken !== token)
     throw { statusCode: 400, message: "Invalid or expired verification link." };
 
@@ -74,61 +82,8 @@ const verifyEmail = async (userId, token) => {
     isEmailVerified: true,
     emailVerifyToken: "",
   });
-
   const updated = await User.findById(userId);
-  // Return full user — frontend can now log them in
   return safeUser(updated);
-};
-
-// ── LOGIN ─────────────────────────────────────────────────────
-const login = async (data) => {
-  const user = await User.findOne({ email: data.email.toLowerCase() });
-
-  // If user doesn't exist, initiate email verification for account creation
-  if (!user) {
-    const token = crypto.randomUUID();
-    await EmailVerification.deleteMany({ email: data.email.toLowerCase() }); // Clear old requests
-    await EmailVerification.create({
-      email: data.email.toLowerCase(),
-      token,
-      userData: {
-        name: data.name || data.email.split("@")[0],
-        phone: data.phone || "",
-        password: bcrypt.hashSync(data.password, 10),
-        address: data.address || { city: "", province: "", country: "Nepal" },
-      },
-    });
-
-    const verifyLink = `${config.frontendUrl}/verify-email?token=${token}&email=${encodeURIComponent(data.email)}`;
-    const { subject, html } = templates.emailVerification({
-      name: data.name || "User",
-      verifyLink,
-    });
-    await sendEmail(data.email, { subject, html });
-
-    return {
-      pending_verification: true,
-      email: data.email,
-      token,
-      message: "Verification email sent. Please check your inbox.",
-    };
-  }
-
-  const isMatch = bcrypt.compareSync(data.password, user.password);
-  if (!isMatch)
-    throw { statusCode: 400, message: "Incorrect email or password." };
-
-  // Block login if email not verified
-  if (!user.isEmailVerified) {
-    throw {
-      statusCode: 403,
-      message: "Please verify your email before logging in. Check your inbox.",
-      emailNotVerified: true,
-      email: user.email,
-    };
-  }
-
-  return safeUser(user);
 };
 
 // ── RESEND VERIFICATION ───────────────────────────────────────
@@ -142,30 +97,39 @@ const resendVerification = async (email) => {
   await User.findByIdAndUpdate(user._id, { emailVerifyToken: verifyToken });
 
   const verifyLink = `${config.frontendUrl}/verify-email?token=${verifyToken}&userId=${user._id}`;
-  const { subject, html } = templates.resendVerification({
+  const { subject, html } = templates.welcomeVerification({
     name: user.name,
     verifyLink,
   });
-  sendEmail(user.email, { subject, html }).catch((err) =>
-    console.error("Resend verification email error:", err),
-  );
-
+  await sendEmail(user.email, { subject, html });
   return { message: "Verification email resent." };
 };
 
-// ── TOGGLE 2FA ────────────────────────────────────────────────
-const toggleTwoFactor = async (userId, enable) => {
-  const user = await User.findByIdAndUpdate(
-    userId,
-    { twoFactorEnabled: enable },
-    { new: true },
-  );
+// ── LOGIN ─────────────────────────────────────────────────────
+const login = async (data) => {
+  const user = await User.findOne({ email: data.email.toLowerCase() });
   if (!user) throw { statusCode: 404, message: "User not found." };
-  return { twoFactorEnabled: user.twoFactorEnabled };
+
+  const isMatch = bcrypt.compareSync(data.password, user.password);
+  if (!isMatch)
+    throw { statusCode: 400, message: "Incorrect email or password." };
+
+  if (!user.isEmailVerified)
+    throw {
+      statusCode: 403,
+      message: "Please verify your email before logging in. Check your inbox.",
+      emailNotVerified: true,
+      email: user.email,
+    };
+
+  return safeUser(user);
 };
 
 // ── FORGOT PASSWORD ───────────────────────────────────────────
 const forgotPassword = async (email) => {
+  if (!validateEmailFormat(email))
+    throw { statusCode: 400, message: "Please enter a valid email address." };
+
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) throw { statusCode: 404, message: "User not found." };
 
@@ -178,7 +142,6 @@ const forgotPassword = async (email) => {
     resetLink,
   });
   await sendEmail(email, { subject, html });
-
   return { message: "Password reset link sent to your email." };
 };
 
@@ -203,7 +166,6 @@ const resetPassword = async (userId, token, newPassword) => {
     const { subject, html } = templates.passwordChanged({ name: user.name });
     sendEmail(user.email, { subject, html }).catch(() => {});
   }
-
   return { message: "Password reset successfully." };
 };
 
@@ -214,62 +176,4 @@ export default {
   login,
   forgotPassword,
   resetPassword,
-  verifyPendingEmail,
-  checkVerificationStatus,
-  toggleTwoFactor,
-};
-
-// ── VERIFY PENDING EMAIL ──────────────────────────────────────
-const verifyPendingEmail = async (token, email) => {
-  const record = await EmailVerification.findOne({
-    token,
-    email: email.toLowerCase(),
-    expiresAt: { $gt: Date.now() },
-  });
-
-  if (!record) {
-    throw { statusCode: 400, message: "Invalid or expired verification link." };
-  }
-
-  // Check if user already exists (in case they registered elsewhere)
-  let user = await User.findOne({ email: email.toLowerCase() });
-
-  if (!user) {
-    // Create new user with stored data
-    user = await User.create({
-      name: record.userData.name,
-      email: email.toLowerCase(),
-      password: record.userData.password,
-      phone: record.userData.phone || "",
-      address: record.userData.address || {
-        city: "",
-        province: "",
-        country: "Nepal",
-      },
-      roles: ["USER"],
-    });
-  }
-
-  // Mark as verified
-  await EmailVerification.findByIdAndUpdate(record._id, { verified: true });
-
-  return safeUser(user);
-};
-
-// ── CHECK VERIFICATION STATUS ────────────────────────────────
-const checkVerificationStatus = async (email) => {
-  const record = await EmailVerification.findOne({
-    email: email.toLowerCase(),
-    expiresAt: { $gt: Date.now() },
-  }).sort({ createdAt: -1 });
-
-  if (!record) {
-    return { verified: false, exists: false };
-  }
-
-  return {
-    verified: record.verified,
-    exists: true,
-    expiresIn: Math.max(0, Math.floor((record.expiresAt - Date.now()) / 1000)),
-  };
 };
