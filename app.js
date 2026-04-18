@@ -30,11 +30,25 @@ const upload = multer({
 connectDB();
 connectCloudinary();
 
-// ── CORS ── allow your frontend origin (update in production)
+// ── CORS ──────────────────────────────────────────────────────
+// Frontend (radhanaenterprises.com.np) is on a different domain from the
+// backend (onrender.com), so we must explicitly allow that origin with
+// credentials so cross-domain cookies work correctly.
+const allowedOrigins = [
+  "https://radhanaenterprises.com.np",
+  "https://www.radhanaenterprises.com.np",
+  "https://radhana-frontend-73xp.onrender.com", // fallback preview URL
+];
+
 app.use(
   cors({
-    origin: config.frontendUrl || "https://radhana-frontend-73xp.onrender.com/", // Live Server default
-    credentials: true, // allow cookies
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true, // Allow cookies cross-domain
   }),
 );
 
@@ -55,7 +69,7 @@ app.use("/api/cart", auth, cartRoutes);
 app.use("/api/admin", auth, adminRoutes);
 app.use("/api/categories", categoryRoutes);
 
-// Gallery accepts multiple files + text fields (title, category, description, etc.)
+// Gallery accepts multiple files + text fields
 app.use(
   "/api/gallery",
   upload.fields([

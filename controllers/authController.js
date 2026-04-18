@@ -1,11 +1,14 @@
 import authService from "../services/authService.js";
 import { createJWT } from "../utils/jwt.js";
 
+// ── Cross-domain cookie fix ───────────────────────────────────
+// Frontend (radhanaenterprises.com.np) and backend (onrender.com) are on
+// different domains, so cookies must use sameSite: "none" + secure: true
 const cookieOptions = {
   httpOnly: true,
-  maxAge: 86400 * 1000,
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
+  maxAge: 86400 * 1000, // 1 day
+  sameSite: "none", // REQUIRED for cross-domain cookies
+  secure: true, // REQUIRED when sameSite is "none"
 };
 
 const register = async (req, res) => {
@@ -19,7 +22,6 @@ const register = async (req, res) => {
       return res.status(400).json({ message: "Passwords do not match." });
 
     const data = await authService.register(req.body);
-    // Log user in immediately after register
     const authToken = createJWT(data);
     res.cookie("authToken", authToken, cookieOptions);
     res.status(201).json(data);
