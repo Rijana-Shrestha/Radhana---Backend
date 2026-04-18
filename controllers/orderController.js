@@ -3,63 +3,43 @@ import uploadFile from "../utils/file.js";
 
 const getOrders = async (req, res) => {
   try {
-    const data = await orderService.getOrders();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.json(await orderService.getOrders());
+  } catch (e) {
+    res.status(500).json({ message: e.message });
   }
 };
 
 const getOrdersByUser = async (req, res) => {
   try {
-    const data = await orderService.getOrdersByUser(req.user._id);
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.json(await orderService.getOrdersByUser(req.user._id));
+  } catch (e) {
+    res.status(500).json({ message: e.message });
   }
 };
 
 const getOrderById = async (req, res) => {
   try {
-    const data = await orderService.getOrderById(req.params.id);
-    res.json(data);
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    res.json(await orderService.getOrderById(req.params.id));
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
   }
 };
 
 const createOrder = async (req, res) => {
   try {
-    let {
-      orderItems,
-      totalPrice,
-      shippingAddress,
-      paymentMethod,
-      orderNotes,
-    } = req.body || {};
-
-    if (typeof orderItems === "string") {
-      orderItems = JSON.parse(orderItems);
-    }
-
-    if (typeof shippingAddress === "string") {
+    let { orderItems, totalPrice, shippingAddress, paymentMethod, orderNotes } =
+      req.body || {};
+    if (typeof orderItems === "string") orderItems = JSON.parse(orderItems);
+    if (typeof shippingAddress === "string")
       shippingAddress = JSON.parse(shippingAddress);
-    }
-
-    if (!orderItems || !orderItems.length) {
+    if (!orderItems?.length)
       return res.status(400).json({ message: "Order items are required." });
-    }
-
-    if (!totalPrice) {
+    if (!totalPrice)
       return res.status(400).json({ message: "Total price is required." });
-    }
-
-    if (!shippingAddress) {
+    if (!shippingAddress)
       return res.status(400).json({ message: "Shipping address is required." });
-    }
 
     let designFileUrl = "";
-
     if (req.file) {
       const uploaded = await uploadFile([req.file]);
       designFileUrl = uploaded[0]?.secure_url || uploaded[0]?.url || "";
@@ -74,25 +54,19 @@ const createOrder = async (req, res) => {
         orderNotes,
         designFileUrl,
       },
-      req.user
+      req.user,
     );
-
     res.status(201).json(data);
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
   }
 };
 
 const updateOrder = async (req, res) => {
   try {
-    const data = await orderService.updateOrder(
-      req.params.id,
-      req.body,
-      req.user,
-    );
-    res.json(data);
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    res.json(await orderService.updateOrder(req.params.id, req.body, req.user));
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
   }
 };
 
@@ -100,31 +74,73 @@ const deleteOrder = async (req, res) => {
   try {
     await orderService.deleteOrder(req.params.id, req.user);
     res.json({ message: "Order deleted successfully." });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
   }
 };
 
-// BUG FIX: original exported as orderPaymentViaKhalti but service exported as orderPayment
+// ── KHALTI: initiate ─────────────────────────────────────────
 const orderPaymentViaKhalti = async (req, res) => {
   try {
-    const data = await orderService.orderPayment(req.params.id, req.user);
-    res.json(data);
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    res.json(await orderService.orderPayment(req.params.id, req.user));
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
   }
 };
 
-const confirmOrderPayment = async (req, res) => {
+// ── KHALTI: verify (called after Khalti redirects user back) ──
+// GET /api/orders/:id/verify-khalti?pidx=xxx
+const verifyKhaltiPayment = async (req, res) => {
   try {
-    const data = await orderService.confirmOrderPayment(
+    const { pidx } = req.query;
+    if (!pidx) return res.status(400).json({ message: "pidx is required." });
+    const data = await orderService.verifyKhaltiPayment(
+      pidx,
       req.params.id,
-      req.body.status,
       req.user,
     );
     res.json(data);
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
+  }
+};
+
+// ── FONEPAY: initiate ─────────────────────────────────────────
+const orderPaymentViaFonepay = async (req, res) => {
+  try {
+    res.json(await orderService.orderPaymentFonepay(req.params.id, req.user));
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
+  }
+};
+
+// ── FONEPAY: verify callback ──────────────────────────────────
+// GET /api/orders/:id/verify-fonepay?PRN=...&BID=...&RC=...&DV=...
+const verifyFonepayPayment = async (req, res) => {
+  try {
+    const data = await orderService.verifyFonepayPayment(
+      req.query,
+      req.params.id,
+      req.user,
+    );
+    res.json(data);
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
+  }
+};
+
+// Legacy
+const confirmOrderPayment = async (req, res) => {
+  try {
+    res.json(
+      await orderService.confirmOrderPayment(
+        req.params.id,
+        req.body.status,
+        req.user,
+      ),
+    );
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
   }
 };
 
@@ -136,5 +152,8 @@ export default {
   updateOrder,
   deleteOrder,
   orderPaymentViaKhalti,
+  verifyKhaltiPayment,
+  orderPaymentViaFonepay,
+  verifyFonepayPayment,
   confirmOrderPayment,
 };

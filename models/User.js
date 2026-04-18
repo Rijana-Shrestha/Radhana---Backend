@@ -29,6 +29,14 @@ const userSchema = new mongoose.Schema({
     required: [true, "Phone number is required."],
     unique: true,
     sparse: true,
+    validate: {
+      validator: function (v) {
+        const cleaned = v.replace(/[\s\-]/g, "");
+        return /^(\+977|977)?(98|97|96)\d{8}$/.test(cleaned);
+      },
+      message:
+        "Please enter a valid Nepali phone number (e.g. 9812345678 or +9779812345678).",
+    },
   },
   address: {
     city: { type: String, default: "" },
@@ -45,9 +53,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
-  twoFactorEnabled: {
+  isEmailVerified: {
     type: Boolean,
     default: false,
+  },
+  emailVerifyToken: {
+    type: String,
+    default: "",
   },
   createdAt: {
     type: Date,

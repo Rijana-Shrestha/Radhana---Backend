@@ -13,7 +13,7 @@ const paymentSchema = new mongoose.Schema({
   method: {
     type: String,
     required: [true, "Payment method is required."],
-    enum: ["cash", "cod", "esewa", "khalti", "bank"],
+    enum: ["cash", "cod", "esewa", "khalti", "fonepay", "bank"],
   },
   status: {
     type: String,
@@ -24,16 +24,12 @@ const paymentSchema = new mongoose.Schema({
       PAYMENT_STATUS_FAILED,
     ],
   },
-  transactionId: {
-    type: String,
-    default: "",
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+  transactionId: { type: String, default: "" },
+  // Khalti specific
+  pidx: { type: String, default: "" },
+  // Fonepay specific
+  fonepayRef: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now },
 });
 
-const model = mongoose.model("Payment", paymentSchema);
-
-export default model;
+export default mongoose.model("Payment", paymentSchema);

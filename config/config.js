@@ -17,8 +17,11 @@ const config = {
     apiSecret:
       process.env.CLOUDINARY_API_SECRET || "ohEBwzyrzDhXE3LPYltExYxlwTc",
   },
-  googleClientId:process.env.GOOGLE_CLIENT_ID || "699930166750-2ifl12usok3o4munn1vhl5d0udtt75je.apps.googleusercontent.com",
-  googleClientSecret:process.env.GOOGLE_CLIENT_SECRET || "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",
+  googleClientId:
+    process.env.GOOGLE_CLIENT_ID ||
+    "699930166750-2ifl12usok3o4munn1vhl5d0udtt75je.apps.googleusercontent.com",
+  googleClientSecret:
+    process.env.GOOGLE_CLIENT_SECRET || "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",
 
   khalti: {
     apiKey: process.env.KHALTI_API_KEY || "",
@@ -27,6 +30,20 @@ const config = {
       process.env.KHALTI_RETURN_URL ||
       "http://localhost:5000/api/orders/confirm-payment",
   },
+
+  fonepay: {
+    merchantId: process.env.FONEPAY_MERCHANT_ID || "",
+    secretKey: process.env.FONEPAY_SECRET_KEY || "",
+    // Sandbox: https://dev.fonepay.com/api/merchant/merchantDetailsForThirdParty
+    // Production: https://fonepay.com/api/merchant/merchantDetailsForThirdParty
+    apiUrl:
+      process.env.FONEPAY_API_URL ||
+      "https://dev.fonepay.com/api/merchant/merchantDetailsForThirdParty",
+    returnUrl:
+      process.env.FONEPAY_RETURN_URL ||
+      "http://localhost:5173/payment/fonepay-verify",
+  },
+
   emailApiKey: process.env.EMAIL_API_KEY || "",
   adminEmail: process.env.ADMIN_EMAIL || "radhanaart@gmail.com",
 };
