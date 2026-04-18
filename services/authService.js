@@ -118,32 +118,18 @@ const register = async (data) => {
   if (existing)
     throw { statusCode: 400, message: "User with this email already exists." };
 
-  const token = crypto.randomUUID();
-  await EmailVerification.deleteMany({ email: data.email.toLowerCase() }); // Clear old requests
-  await EmailVerification.create({
-    email: data.email.toLowerCase(),
-    token,
-    userData: {
-      name: data.name,
-      phone: data.phone,
-      password: bcrypt.hashSync(data.password, 10),
-      address: data.address || { city: "", province: "", country: "Nepal" },
-    },
-  });
+  const hashedPassword = bcrypt.hashSync(data.password, 10);
 
-  const verifyLink = `${config.frontendUrl}/verify-email?token=${token}&email=${encodeURIComponent(data.email)}`;
-  const { subject, html } = templates.emailVerification({
+  const created = await User.create({
     name: data.name,
-    verifyLink,
-  });
-  await sendEmail(data.email, { subject, html });
-
-  return {
-    pending_verification: true,
     email: data.email,
-    token,
-    message: "Verification email sent. Please check your inbox.",
-  };
+    password: hashedPassword,
+    phone: data.phone,
+    address: data.address || { city: "", province: "", country: "Nepal" },
+    roles: data.roles || ["USER"],
+  });
+
+  return safeUser(created);
 };
 
 // ── FORGOT PASSWORD ───────────────────────────────────────────
