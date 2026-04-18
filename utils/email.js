@@ -87,6 +87,20 @@ export const templates = {
     `),
   }),
 
+  verifyEmail: ({ name, verifyLink }) => ({
+    subject: `Verify your Radhana Art email address 🪷`,
+    html: shell(`
+      <h2>Verify Your Email Address</h2>
+      <p>Hello <strong>${name}</strong>,</p>
+      <p>Thank you for registering with Radhana Art! Please verify your email address to activate your account and start shopping.</p>
+      <div class="btn-wrap"><a href="${verifyLink}" class="btn">✅ Verify My Email</a></div>
+      <div class="warn">⏰ This link expires in <strong>24 hours</strong>. If you did not create an account, ignore this email.</div>
+      <hr class="divider"/>
+      <p style="font-size:13px;color:#9ca3af;">If the button doesn't work, copy and paste this link:<br/>
+      <a href="${verifyLink}" style="word-break:break-all;font-size:12px;">${verifyLink}</a></p>
+    `),
+  }),
+
   resetPassword: ({ name, resetLink }) => ({
     subject: "Reset Your Radhana Art Password 🔐",
     html: shell(`

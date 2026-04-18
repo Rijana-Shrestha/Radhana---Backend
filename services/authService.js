@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import ResetPassword from "../models/ResetPassword.js";
+import EmailVerification from "../models/EmailVerification.js";
 import bcrypt from "bcryptjs";
 import sendEmail, { templates } from "../utils/email.js";
 import config from "../config/config.js";
@@ -14,20 +15,32 @@ const safeUser = (user) => ({
   address: user.address,
   roles: user.roles,
   profileImageUrl: user.profileImageUrl,
+  isVerified: user.isVerified,
   createdAt: user.createdAt,
 });
 
-// ── REGISTER — no email verification, log in immediately ──────
+// ── REGISTER — saves user unverified, sends verification email ─
 const register = async (data) => {
   if (!validateEmailFormat(data.email))
     throw { statusCode: 400, message: "Please enter a valid email address." };
 
   const existing = await User.findOne({ email: data.email.toLowerCase() });
-  if (existing)
+  if (existing) {
+    // If already registered but not verified, resend the email
+    if (!existing.isVerified) {
+      await sendVerificationEmail(existing);
+      throw {
+        statusCode: 400,
+        message:
+          "This email is already registered but not verified. We've resent the verification email — please check your inbox.",
+      };
+    }
     throw { statusCode: 400, message: "User with this email already exists." };
+  }
 
   const hashedPassword = bcrypt.hashSync(data.password, 10);
 
+  // Create user with isVerified: false — cannot login until verified
   const created = await User.create({
     name: data.name,
     email: data.email.toLowerCase(),
@@ -35,18 +48,86 @@ const register = async (data) => {
     phone: data.phone,
     address: data.address || { city: "", province: "", country: "Nepal" },
     roles: data.roles || ["USER"],
+    isVerified: false,
   });
 
-  // Send welcome email non-blocking — failure does NOT block registration
-  const { subject, html } = templates.welcomeEmail({ name: created.name });
-  sendEmail(created.email, { subject, html }).catch((err) =>
-    console.error("Welcome email error (non-blocking):", err.message),
-  );
+  // Send verification email — failure rolls back user creation
+  try {
+    await sendVerificationEmail(created);
+  } catch (err) {
+    // Delete the user so they can try again
+    await User.findByIdAndDelete(created._id);
+    throw {
+      statusCode: 500,
+      message: "Failed to send verification email. Please try again.",
+    };
+  }
 
-  return safeUser(created);
+  return {
+    message:
+      "Registration successful! Please check your email to verify your account.",
+  };
 };
 
-// ── LOGIN ─────────────────────────────────────────────────────
+// Helper: create token and send verification email
+const sendVerificationEmail = async (user) => {
+  // Delete any old unused tokens for this user
+  await EmailVerification.deleteMany({ email: user.email.toLowerCase() });
+
+  const token = crypto.randomUUID();
+
+  await EmailVerification.create({
+    email: user.email.toLowerCase(),
+    token,
+    // Expires in 24 hours
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  });
+
+  const verifyLink = `${config.frontendUrl}/#/verify-email?token=${token}&userId=${user._id}`;
+  const { subject, html } = templates.verifyEmail({
+    name: user.name,
+    verifyLink,
+  });
+  await sendEmail(user.email, { subject, html });
+};
+
+// ── VERIFY EMAIL — called when user clicks link in email ───────
+const verifyEmail = async (userId, token) => {
+  const record = await EmailVerification.findOne({
+    expiresAt: { $gt: Date.now() },
+  });
+
+  // Find by userId match manually (token stored separately)
+  const user = await User.findById(userId);
+  if (!user) throw { statusCode: 404, message: "User not found." };
+
+  if (user.isVerified)
+    throw {
+      statusCode: 400,
+      message: "Email is already verified. Please login.",
+    };
+
+  const verRecord = await EmailVerification.findOne({
+    email: user.email,
+    token,
+    expiresAt: { $gt: Date.now() },
+  });
+
+  if (!verRecord)
+    throw {
+      statusCode: 400,
+      message:
+        "Verification link is invalid or has expired. Please register again.",
+    };
+
+  // Mark user as verified
+  await User.findByIdAndUpdate(userId, { isVerified: true });
+  await EmailVerification.deleteMany({ email: user.email });
+
+  return safeUser({ ...user.toObject(), isVerified: true });
+};
+
+// ── LOGIN — blocks unverified users ───────────────────────────
 const login = async (data) => {
   const user = await User.findOne({ email: data.email.toLowerCase() });
   if (!user)
@@ -59,7 +140,33 @@ const login = async (data) => {
   if (!isMatch)
     throw { statusCode: 400, message: "Incorrect email or password." };
 
+  // Block login if email not verified
+  if (!user.isVerified)
+    throw {
+      statusCode: 403,
+      message: "Please verify your email before logging in. Check your inbox.",
+      notVerified: true,
+    };
+
   return safeUser(user);
+};
+
+// ── RESEND VERIFICATION EMAIL ─────────────────────────────────
+const resendVerification = async (email) => {
+  if (!validateEmailFormat(email))
+    throw { statusCode: 400, message: "Please enter a valid email address." };
+
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user)
+    throw { statusCode: 404, message: "No account found with this email." };
+  if (user.isVerified)
+    throw {
+      statusCode: 400,
+      message: "This email is already verified. Please login.",
+    };
+
+  await sendVerificationEmail(user);
+  return { message: "Verification email resent. Please check your inbox." };
 };
 
 // ── FORGOT PASSWORD ───────────────────────────────────────────
@@ -79,7 +186,6 @@ const forgotPassword = async (email) => {
     resetLink,
   });
 
-  // This one MUST succeed — user needs the link
   try {
     await sendEmail(email, { subject, html });
   } catch (err) {
@@ -120,6 +226,8 @@ const resetPassword = async (userId, token, newPassword) => {
 
 export default {
   register,
+  verifyEmail,
+  resendVerification,
   login,
   forgotPassword,
   resetPassword,

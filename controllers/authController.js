@@ -1,14 +1,12 @@
 import authService from "../services/authService.js";
 import { createJWT } from "../utils/jwt.js";
 
-// ── Cross-domain cookie fix ───────────────────────────────────
-// Frontend (radhanaenterprises.com.np) and backend (onrender.com) are on
-// different domains, so cookies must use sameSite: "none" + secure: true
+// Cross-domain cookie: frontend (.com.np) and backend (.onrender.com) are different domains
 const cookieOptions = {
   httpOnly: true,
-  maxAge: 86400 * 1000, // 1 day
-  sameSite: "none", // REQUIRED for cross-domain cookies
-  secure: true, // REQUIRED when sameSite is "none"
+  maxAge: 86400 * 1000,
+  sameSite: "none", // required for cross-domain
+  secure: true, // required when sameSite is "none"
 };
 
 const register = async (req, res) => {
@@ -21,10 +19,44 @@ const register = async (req, res) => {
     if (password !== confirmPassword)
       return res.status(400).json({ message: "Passwords do not match." });
 
+    // Returns { message } — user must verify email before login
     const data = await authService.register(req.body);
-    const authToken = createJWT(data);
-    res.cookie("authToken", authToken, cookieOptions);
     res.status(201).json(data);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// Called when user clicks verification link in email
+const verifyEmail = async (req, res) => {
+  try {
+    const { token, userId } = req.query;
+    if (!token || !userId)
+      return res
+        .status(400)
+        .json({ message: "Token and userId are required." });
+
+    const user = await authService.verifyEmail(userId, token);
+
+    // Log user in immediately after verification
+    const authToken = createJWT(user);
+    res.cookie("authToken", authToken, cookieOptions);
+    res.json({
+      ...user,
+      message: "Email verified successfully! You are now logged in.",
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// Resend verification email
+const resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required." });
+    const data = await authService.resendVerification(email);
+    res.json(data);
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -42,7 +74,10 @@ const login = async (req, res) => {
     res.cookie("authToken", authToken, cookieOptions);
     res.json(data);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
+    res.status(error.statusCode || 500).json({
+      message: error.message,
+      notVerified: error.notVerified || false,
+    });
   }
 };
 
@@ -85,6 +120,8 @@ const getMe = async (req, res) => {
 
 export default {
   register,
+  verifyEmail,
+  resendVerification,
   login,
   forgotPassword,
   resetPassword,

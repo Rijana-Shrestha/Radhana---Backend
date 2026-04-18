@@ -11,19 +11,10 @@ const emailVerificationSchema = new mongoose.Schema({
     type: String,
     required: [true, "Verification token is required."],
   },
+  // 24 hours (was 1 minute — way too short!)
   expiresAt: {
     type: Date,
-    default: () => Date.now() + 60000, // 1 minute
-  },
-  verified: {
-    type: Boolean,
-    default: false,
-  },
-  userData: {
-    name: String,
-    phone: String,
-    password: String,
-    address: Object,
+    default: () => new Date(Date.now() + 24 * 60 * 60 * 1000),
   },
   createdAt: {
     type: Date,
@@ -32,5 +23,4 @@ const emailVerificationSchema = new mongoose.Schema({
 });
 
 const model = mongoose.model("EmailVerification", emailVerificationSchema);
-
 export default model;
