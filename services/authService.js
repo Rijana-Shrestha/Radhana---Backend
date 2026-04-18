@@ -1,12 +1,10 @@
 import User from "../models/User.js";
 import ResetPassword from "../models/ResetPassword.js";
-import OauthAccount from "../models/OauthAccount.js";
 import bcrypt from "bcryptjs";
 import sendEmail, { templates } from "../utils/email.js";
 import config from "../config/config.js";
 import crypto from "crypto";
 
-// Return safe user object (no password, no sensitive fields)
 const safeUser = (user) => ({
   _id: user._id,
   name: user.name,
@@ -15,12 +13,70 @@ const safeUser = (user) => ({
   address: user.address,
   roles: user.roles,
   profileImageUrl: user.profileImageUrl,
+  isEmailVerified: user.isEmailVerified,
   twoFactorEnabled: user.twoFactorEnabled,
   createdAt: user.createdAt,
 });
 
-// Generate a 6-digit numeric OTP
-const generateOTP = () => String(Math.floor(100000 + Math.random() * 900000));
+// ── REGISTER ──────────────────────────────────────────────────
+const register = async (data) => {
+  const existing = await User.findOne({ email: data.email.toLowerCase() });
+  if (existing)
+    throw { statusCode: 400, message: "User with this email already exists." };
+
+  const hashedPassword = bcrypt.hashSync(data.password, 10);
+  const verifyToken = crypto.randomBytes(32).toString("hex");
+
+  const created = await User.create({
+    name: data.name,
+    email: data.email.toLowerCase(),
+    password: hashedPassword,
+    phone: data.phone,
+    address: data.address || { city: "", province: "", country: "Nepal" },
+    roles: data.roles || ["USER"],
+    isEmailVerified: false,
+    emailVerifyToken: verifyToken,
+  });
+
+  // Send branded verification email
+  const verifyLink = `${config.frontendUrl}/verify-email?token=${verifyToken}&userId=${created._id}`;
+  const { subject, html } = templates.welcomeVerification({
+    name: created.name,
+    verifyLink,
+  });
+  sendEmail(created.email, { subject, html }).catch((err) =>
+    console.error("Welcome email error:", err),
+  );
+
+  // Return minimal info — NOT logged in yet
+  return {
+    emailSent: true,
+    email: created.email,
+    name: created.name,
+    message: "Verification email sent. Please check your inbox.",
+  };
+};
+
+// ── VERIFY EMAIL ──────────────────────────────────────────────
+const verifyEmail = async (userId, token) => {
+  const user = await User.findById(userId);
+  if (!user) throw { statusCode: 404, message: "User not found." };
+
+  if (user.isEmailVerified)
+    throw { statusCode: 400, message: "Email is already verified." };
+
+  if (!user.emailVerifyToken || user.emailVerifyToken !== token)
+    throw { statusCode: 400, message: "Invalid or expired verification link." };
+
+  await User.findByIdAndUpdate(userId, {
+    isEmailVerified: true,
+    emailVerifyToken: "",
+  });
+
+  const updated = await User.findById(userId);
+  // Return full user — frontend can now log them in
+  return safeUser(updated);
+};
 
 // ── LOGIN ─────────────────────────────────────────────────────
 const login = async (data) => {
@@ -31,84 +87,37 @@ const login = async (data) => {
   if (!isMatch)
     throw { statusCode: 400, message: "Incorrect email or password." };
 
-  // If 2FA is enabled, send OTP instead of logging in immediately
-  if (user.twoFactorEnabled) {
-    const otp = generateOTP();
-    await OTP.deleteMany({ userId: user._id, isUsed: false }); // clear old OTPs
-    await OTP.create({ userId: user._id, code: otp });
-
-    const { subject, html } = templates.twoFactorOTP({ name: user.name, otp });
-    await sendEmail(user.email, { subject, html });
-
-    // Return a pending state — frontend must submit OTP to complete login
-    return {
-      twoFactorRequired: true,
-      userId: user._id,
-      message: "OTP sent to your registered email address.",
+  // Block login if email not verified
+  if (!user.isEmailVerified) {
+    throw {
+      statusCode: 403,
+      message: "Please verify your email before logging in. Check your inbox.",
+      emailNotVerified: true,
+      email: user.email,
     };
   }
 
   return safeUser(user);
 };
 
-// ── VERIFY 2FA OTP ────────────────────────────────────────────
-const verifyTwoFactor = async (userId, code) => {
-  const record = await OTP.findOne({
-    userId,
-    isUsed: false,
-    expiresAt: { $gt: Date.now() },
-  }).sort({ expiresAt: -1 });
-
-  if (!record || record.code !== code) {
-    throw { statusCode: 400, message: "Invalid or expired OTP." };
-  }
-
-  await OTP.findByIdAndUpdate(record._id, { isUsed: true });
-
-  const user = await User.findById(userId);
+// ── RESEND VERIFICATION ───────────────────────────────────────
+const resendVerification = async (email) => {
+  const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) throw { statusCode: 404, message: "User not found." };
+  if (user.isEmailVerified)
+    throw { statusCode: 400, message: "Email is already verified." };
 
-  return safeUser(user);
-};
+  const verifyToken = crypto.randomBytes(32).toString("hex");
+  await User.findByIdAndUpdate(user._id, { emailVerifyToken: verifyToken });
 
-// ── TOGGLE 2FA ────────────────────────────────────────────────
-const toggleTwoFactor = async (userId, enable) => {
-  const user = await User.findByIdAndUpdate(
-    userId,
-    { twoFactorEnabled: enable },
-    { new: true },
-  );
-  if (!user) throw { statusCode: 404, message: "User not found." };
-  return { twoFactorEnabled: user.twoFactorEnabled };
-};
-
-// ── REGISTER ──────────────────────────────────────────────────
-const register = async (data) => {
-  const existing = await User.findOne({ email: data.email.toLowerCase() });
-  if (existing)
-    throw { statusCode: 400, message: "User with this email already exists." };
-
-  const hashedPassword = bcrypt.hashSync(data.password, 10);
-
-  const created = await User.create({
-    name: data.name,
-    email: data.email,
-    password: hashedPassword,
-    phone: data.phone,
-    address: data.address || { city: "", province: "", country: "Nepal" },
-    roles: data.roles || ["USER"],
-  });
-
-  // Send welcome email (non-blocking)
+  const verifyLink = `${config.frontendUrl}/verify-email?token=${verifyToken}&userId=${user._id}`;
   const { subject, html } = templates.welcomeVerification({
-    name: created.name,
-    verifyLink: `${config.frontendUrl}/verify-email`,
+    name: user.name,
+    verifyLink,
   });
-  sendEmail(created.email, { subject, html }).catch((err) =>
-    console.error("Welcome email error:", err),
-  );
+  await sendEmail(user.email, { subject, html });
 
-  return safeUser(created);
+  return { message: "Verification email resent." };
 };
 
 // ── FORGOT PASSWORD ───────────────────────────────────────────
@@ -120,7 +129,6 @@ const forgotPassword = async (email) => {
   await ResetPassword.create({ userId: user._id, token });
 
   const resetLink = `${config.frontendUrl}/reset-password?token=${token}&userId=${user._id}`;
-
   const { subject, html } = templates.resetPassword({
     name: user.name,
     resetLink,
@@ -138,9 +146,8 @@ const resetPassword = async (userId, token, newPassword) => {
     expiresAt: { $gt: Date.now() },
   }).sort({ expiresAt: -1 });
 
-  if (!record || record.token !== token) {
+  if (!record || record.token !== token)
     throw { statusCode: 400, message: "Invalid or expired reset token." };
-  }
 
   const hashedPassword = bcrypt.hashSync(newPassword, 10);
   const user = await User.findByIdAndUpdate(userId, {
@@ -148,62 +155,19 @@ const resetPassword = async (userId, token, newPassword) => {
   });
   await ResetPassword.findByIdAndUpdate(record._id, { isUsed: true });
 
-  // Notify user that password was changed
   if (user) {
     const { subject, html } = templates.passwordChanged({ name: user.name });
-    sendEmail(user.email, { subject, html }).catch((err) =>
-      console.error("Password changed email error:", err),
-    );
+    sendEmail(user.email, { subject, html }).catch(() => {});
   }
 
   return { message: "Password reset successfully." };
 };
 
-const oauthLogin = async (provider, providerAccountId, profile) => {
-  // Check if OAuth account exists
-  let oauthAccount = await OauthAccount.findOne({
-    provider,
-    providerAccountId,
-  });
-
-  let user;
-
-  if (oauthAccount) {
-    // User already linked with this OAuth provider
-    user = await User.findById(oauthAccount.userId);
-  } else {
-    // Check if user exists by email
-    user = await User.findOne({ email: profile.email.toLowerCase() });
-
-    if (!user) {
-      // Create new user for OAuth
-      const generatedPassword = crypto.randomBytes(32).toString("hex");
-      const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
-
-      user = await User.create({
-        name: profile.name || profile.email.split("@")[0],
-        email: profile.email,
-        password: hashedPassword,
-        phone: profile.phone || "",
-        address: { city: "", province: "", country: "Nepal" },
-        roles: ["USER"],
-        profileImageUrl: profile.picture || "",
-      });
-    }
-
-    // Link OAuth account to user
-    await OauthAccount.create({
-      provider,
-      providerAccountId,
-      userId: user._id,
-    });
-  }
-
-  if (!user) {
-    throw { statusCode: 404, message: "User not found." };
-  }
-
-  return safeUser(user);
+export default {
+  register,
+  verifyEmail,
+  resendVerification,
+  login,
+  forgotPassword,
+  resetPassword,
 };
-
-export default { register, login, forgotPassword, resetPassword, oauthLogin };
