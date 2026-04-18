@@ -123,6 +123,36 @@ const getMe = async (req, res) => {
   res.json(req.user);
 };
 
+// POST /api/auth/verify-email
+const verifyEmail = async (req, res) => {
+  try {
+    const { token, email } = req.body;
+    if (!token || !email)
+      return res.status(400).json({ message: "Token and email are required." });
+
+    const user = await authService.verifyEmail(token, email);
+    const authToken = createJWT(user);
+    res.cookie("authToken", authToken, cookieOptions);
+    res.json({ message: "Email verified successfully.", user });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// GET /api/auth/check-verification?email=...
+const checkVerificationStatus = async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email)
+      return res.status(400).json({ message: "Email is required." });
+
+    const status = await authService.checkVerificationStatus(email);
+    res.json(status);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 export default {
   login,
   register,
@@ -130,6 +160,8 @@ export default {
   resetPassword,
   logout,
   getMe,
+  verifyEmail,
+  checkVerificationStatus,
   verifyTwoFactor,
   toggleTwoFactor,
 };

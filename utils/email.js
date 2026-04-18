@@ -320,6 +320,34 @@ export const templates = {
       </div>
     `),
   }),
+
+  // 7. Email verification for new account creation
+  emailVerification: ({ name, verifyLink }) => ({
+    subject: `Verify Your Email — Create Your Radhana Art Account 🪷`,
+    html: shell(`
+      <h2>Complete Your Account Setup</h2>
+      <p>Hello <strong>${name}</strong>,</p>
+      <p>Thank you for trying to log in or create an account with Radhana Art. We need to verify your email address to proceed.</p>
+      <p>Click the button below to verify your email and complete your account setup:</p>
+      <div class="btn-wrap">
+        <a href="${verifyLink}" class="btn">✅ Verify Email & Continue</a>
+      </div>
+      <div class="warning">
+        ⏰ This verification link expires in <strong>1 minute</strong>. Act quickly!
+      </div>
+      <p style="font-size:13px;color:#9ca3af;">
+        If the button doesn't work, copy and paste this link into your browser:<br/>
+        <a href="${verifyLink}" style="word-break:break-all;font-size:12px;">${verifyLink}</a>
+      </p>
+      <hr class="divider"/>
+      <p><strong>Why verify?</strong></p>
+      <div class="info-row">
+        <span>🔒 Keeps your account secure</span>
+        <span>📧 We'll send important updates to this email</span>
+        <span>🎁 Unlock exclusive member offers</span>
+      </div>
+    `),
+  }),
 };
 
 // ══════════════════════════════════════════════
