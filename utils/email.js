@@ -67,22 +67,23 @@ a{color:${BRAND.primary};}
 </div></body></html>`;
 
 export const templates = {
-  welcomeVerification: ({ name, verifyLink }) => ({
-    subject: `Welcome to Radhana Art, ${name}! 🪷 Verify Your Email`,
+  // Simple welcome email — no verification link needed
+  welcomeEmail: ({ name }) => ({
+    subject: `Welcome to Radhana Art, ${name}! 🪷`,
     html: shell(`
       <h2>Welcome to Radhana Art! 🎉</h2>
       <p>Hello <strong>${name}</strong>,</p>
-      <p>Thank you for creating your account. Please verify your email address to activate it:</p>
-      <div class="btn-wrap"><a href="${verifyLink}" class="btn">✅ Verify My Email</a></div>
-      <div class="warn">⏰ This link expires in <strong>24 hours</strong>.</div>
+      <p>Thank you for creating your account. You can now shop our full collection of custom laser-engraved products!</p>
+      <div class="btn-wrap"><a href="${BRAND.website}/products" class="btn">🛍️ Explore Products</a></div>
       <div class="info">
         <span>🛒 Track your orders in real time</span>
         <span>🎁 Save your custom design preferences</span>
         <span>📦 Get exclusive member-only offers</span>
+        <span>💬 WhatsApp us anytime for help</span>
       </div>
-      <hr class="divider"/>
-      <p style="font-size:13px;color:#9ca3af;">If the button doesn't work, copy and paste this link:<br/>
-      <a href="${verifyLink}" style="word-break:break-all;font-size:12px;">${verifyLink}</a></p>
+      <div class="btn-wrap">
+        <a href="https://wa.me/9779823939106" class="btn" style="background:linear-gradient(135deg,#25d366,#128c7e);">💬 Chat on WhatsApp</a>
+      </div>
     `),
   }),
 
@@ -167,34 +168,6 @@ export const templates = {
       <p>Your account password was just changed successfully.</p>
       <div class="warn">⚠️ If you did NOT make this change, <a href="mailto:${BRAND.email}"><strong>contact us immediately</strong></a> or reset your password below.</div>
       <div class="btn-wrap"><a href="${BRAND.website}/forgot-password" class="btn">🔐 Reset My Password</a></div>
-    `),
-  }),
-
-  // 7. Email verification for new account creation
-  emailVerification: ({ name, verifyLink }) => ({
-    subject: `Verify Your Email — Create Your Radhana Art Account 🪷`,
-    html: shell(`
-      <h2>Complete Your Account Setup</h2>
-      <p>Hello <strong>${name}</strong>,</p>
-      <p>Thank you for trying to log in or create an account with Radhana Art. We need to verify your email address to proceed.</p>
-      <p>Click the button below to verify your email and complete your account setup:</p>
-      <div class="btn-wrap">
-        <a href="${verifyLink}" class="btn">✅ Verify Email & Continue</a>
-      </div>
-      <div class="warning">
-        ⏰ This verification link expires in <strong>1 minute</strong>. Act quickly!
-      </div>
-      <p style="font-size:13px;color:#9ca3af;">
-        If the button doesn't work, copy and paste this link into your browser:<br/>
-        <a href="${verifyLink}" style="word-break:break-all;font-size:12px;">${verifyLink}</a>
-      </p>
-      <hr class="divider"/>
-      <p><strong>Why verify?</strong></p>
-      <div class="info-row">
-        <span>🔒 Keeps your account secure</span>
-        <span>📧 We'll send important updates to this email</span>
-        <span>🎁 Unlock exclusive member offers</span>
-      </div>
     `),
   }),
 };

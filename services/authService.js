@@ -14,11 +14,10 @@ const safeUser = (user) => ({
   address: user.address,
   roles: user.roles,
   profileImageUrl: user.profileImageUrl,
-  isEmailVerified: user.isEmailVerified,
   createdAt: user.createdAt,
 });
 
-// ── REGISTER ──────────────────────────────────────────────────
+// ── REGISTER — no email verification, log in immediately ──────
 const register = async (data) => {
   if (!validateEmailFormat(data.email))
     throw { statusCode: 400, message: "Please enter a valid email address." };
@@ -28,7 +27,6 @@ const register = async (data) => {
     throw { statusCode: 400, message: "User with this email already exists." };
 
   const hashedPassword = bcrypt.hashSync(data.password, 10);
-  const verifyToken = crypto.randomBytes(32).toString("hex");
 
   const created = await User.create({
     name: data.name,
@@ -37,72 +35,15 @@ const register = async (data) => {
     phone: data.phone,
     address: data.address || { city: "", province: "", country: "Nepal" },
     roles: data.roles || ["USER"],
-    isEmailVerified: false,
-    emailVerifyToken: verifyToken,
   });
 
-  const verifyLink = `${config.frontendUrl}/verify-email?token=${verifyToken}&userId=${created._id}`;
-  const { subject, html } = templates.welcomeVerification({
-    name: created.name,
-    verifyLink,
-  });
+  // Send welcome email non-blocking — failure does NOT block registration
+  const { subject, html } = templates.welcomeEmail({ name: created.name });
+  sendEmail(created.email, { subject, html }).catch((err) =>
+    console.error("Welcome email error (non-blocking):", err.message),
+  );
 
-  // Throw error so user knows email failed — don't silently swallow
-  try {
-    await sendEmail(created.email, { subject, html });
-  } catch (emailErr) {
-    // Clean up the created user so they can try again
-    await User.findByIdAndDelete(created._id);
-    console.error("Verification email failed:", emailErr);
-    throw {
-      statusCode: 500,
-      message:
-        "Failed to send verification email. Please check your email address and try again.",
-    };
-  }
-
-  return {
-    emailSent: true,
-    email: created.email,
-    name: created.name,
-    message: "Verification email sent. Please check your inbox.",
-  };
-};
-
-// ── VERIFY EMAIL ──────────────────────────────────────────────
-const verifyEmail = async (userId, token) => {
-  const user = await User.findById(userId);
-  if (!user) throw { statusCode: 404, message: "User not found." };
-  if (user.isEmailVerified)
-    throw { statusCode: 400, message: "Email is already verified." };
-  if (!user.emailVerifyToken || user.emailVerifyToken !== token)
-    throw { statusCode: 400, message: "Invalid or expired verification link." };
-
-  await User.findByIdAndUpdate(userId, {
-    isEmailVerified: true,
-    emailVerifyToken: "",
-  });
-  const updated = await User.findById(userId);
-  return safeUser(updated);
-};
-
-// ── RESEND VERIFICATION ───────────────────────────────────────
-const resendVerification = async (email) => {
-  const user = await User.findOne({ email: email.toLowerCase() });
-  if (!user) throw { statusCode: 404, message: "User not found." };
-  if (user.isEmailVerified)
-    throw { statusCode: 400, message: "Email is already verified." };
-
-  const verifyToken = crypto.randomBytes(32).toString("hex");
-  await User.findByIdAndUpdate(user._id, { emailVerifyToken: verifyToken });
-
-  const verifyLink = `${config.appUrl}/verify-email?token=${verifyToken}&userId=${user._id}`;
-  const { subject, html } = templates.welcomeVerification({
-    name: user.name,
-    verifyLink,
-  });
-  await sendEmail(user.email, { subject, html });
-  return { message: "Verification email resent." };
+  return safeUser(created);
 };
 
 // ── LOGIN ─────────────────────────────────────────────────────
@@ -113,14 +54,6 @@ const login = async (data) => {
   const isMatch = bcrypt.compareSync(data.password, user.password);
   if (!isMatch)
     throw { statusCode: 400, message: "Incorrect email or password." };
-
-  if (!user.isEmailVerified)
-    throw {
-      statusCode: 403,
-      message: "Please verify your email before logging in. Check your inbox.",
-      emailNotVerified: true,
-      email: user.email,
-    };
 
   return safeUser(user);
 };
@@ -141,7 +74,18 @@ const forgotPassword = async (email) => {
     name: user.name,
     resetLink,
   });
-  await sendEmail(email, { subject, html });
+
+  // This one MUST succeed — user needs the link
+  try {
+    await sendEmail(email, { subject, html });
+  } catch (err) {
+    console.error("Reset password email error:", err.message);
+    throw {
+      statusCode: 500,
+      message: "Failed to send reset email. Please try again.",
+    };
+  }
+
   return { message: "Password reset link sent to your email." };
 };
 
@@ -166,13 +110,12 @@ const resetPassword = async (userId, token, newPassword) => {
     const { subject, html } = templates.passwordChanged({ name: user.name });
     sendEmail(user.email, { subject, html }).catch(() => {});
   }
+
   return { message: "Password reset successfully." };
 };
 
 export default {
   register,
-  verifyEmail,
-  resendVerification,
   login,
   forgotPassword,
   resetPassword,

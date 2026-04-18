@@ -17,35 +17,12 @@ const register = async (req, res) => {
       return res.status(400).json({ message: "Confirm password is required." });
     if (password !== confirmPassword)
       return res.status(400).json({ message: "Passwords do not match." });
+
     const data = await authService.register(req.body);
-    res.status(201).json(data); // no cookie — must verify email first
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
-  }
-};
-
-const verifyEmail = async (req, res) => {
-  try {
-    const { token, userId } = req.query;
-    if (!token || !userId)
-      return res
-        .status(400)
-        .json({ message: "Token and userId are required." });
-    const user = await authService.verifyEmail(userId, token);
-    const authToken = createJWT(user);
+    // Log user in immediately after register
+    const authToken = createJWT(data);
     res.cookie("authToken", authToken, cookieOptions);
-    res.json({ ...user, verified: true });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
-  }
-};
-
-const resendVerification = async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ message: "Email is required." });
-    const data = await authService.resendVerification(email);
-    res.json(data);
+    res.status(201).json(data);
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -57,16 +34,13 @@ const login = async (req, res) => {
     if (!email) return res.status(400).json({ message: "Email is required." });
     if (!password)
       return res.status(400).json({ message: "Password is required." });
+
     const data = await authService.login({ email, password });
     const authToken = createJWT(data);
     res.cookie("authToken", authToken, cookieOptions);
     res.json(data);
   } catch (error) {
-    res.status(error.statusCode || 500).json({
-      message: error.message,
-      emailNotVerified: error.emailNotVerified || false,
-      email: error.email || "",
-    });
+    res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
 
@@ -109,8 +83,6 @@ const getMe = async (req, res) => {
 
 export default {
   register,
-  verifyEmail,
-  resendVerification,
   login,
   forgotPassword,
   resetPassword,

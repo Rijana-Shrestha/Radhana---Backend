@@ -4,7 +4,7 @@ dotenv.config();
 
 const appUrl = process.env.APP_URL || "https://radhana-art.onrender.com";
 const frontendUrl =
-  process.env.FRONTEND_URL || "https://radhanaenterprises.com.np/";
+  process.env.FRONTEND_URL || "https://radhanaenterprises.com.np/#";
 
 const config = {
   appUrl,
