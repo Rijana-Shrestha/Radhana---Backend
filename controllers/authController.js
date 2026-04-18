@@ -1,8 +1,6 @@
 import authService from "../services/authService.js";
 import { createJWT } from "../utils/jwt.js";
 
-import {generateCodeVerifier, generateState, Google} from "arctic"
-import { google } from "../utils/oauth/google.js";
 import config from "../config/config.js";
 
 const cookieOptions = {
