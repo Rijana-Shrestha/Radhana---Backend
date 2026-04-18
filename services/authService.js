@@ -49,7 +49,11 @@ const register = async (data) => {
 // ── LOGIN ─────────────────────────────────────────────────────
 const login = async (data) => {
   const user = await User.findOne({ email: data.email.toLowerCase() });
-  if (!user) throw { statusCode: 404, message: "User not found." };
+  if (!user)
+    throw {
+      statusCode: 404,
+      message: "No account found with this email. Please register first.",
+    };
 
   const isMatch = bcrypt.compareSync(data.password, user.password);
   if (!isMatch)
