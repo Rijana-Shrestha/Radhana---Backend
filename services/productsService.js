@@ -1,5 +1,6 @@
 import { ADMIN } from "../constants/roles.js";
 import Product from "../models/Product.js";
+import Category from "../models/Category.js";
 import uploadFile from "../utils/file.js";
 
 const getAllProducts = async (query) => {
@@ -71,8 +72,8 @@ const createProduct = async (data, files, createdBy) => {
     }
 
     // Validate category is valid
-    const validCategories = ["wooden", "qr", "keyring", "award", "numberplate", "signboard", "neon", "mug", "leafart"];
-    if (!validCategories.includes(data.category)) {
+    const validCategories = await Category.find().distinct('name');
+    if (!validCategories.includes(data.category.toLowerCase())) {
       throw {
         statusCode: 400,
         message: `Invalid category. Must be one of: ${validCategories.join(", ")}`
