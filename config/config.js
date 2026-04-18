@@ -2,10 +2,13 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const appUrl = process.env.APP_URL || "http://localhost:5000";
+const frontendUrl =
+  process.env.FRONTEND_URL || "https://radhanaenterprises.com.np/";
+
 const config = {
-  appUrl: process.env.APP_URL || "http://localhost:5000",
-  frontendUrl:
-    process.env.FRONTEND_URL || "https://radhana-frontend-73xp.onrender.com/",
+  appUrl,
+  frontendUrl,
   PORT: process.env.PORT || 5000,
   MONGODB_URL:
     process.env.MONGODB_URL ||
@@ -22,12 +25,12 @@ const config = {
     "699930166750-2ifl12usok3o4munn1vhl5d0udtt75je.apps.googleusercontent.com",
   googleClientSecret:
     process.env.GOOGLE_CLIENT_SECRET || "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",
+
   khalti: {
     apiKey: process.env.KHALTI_API_KEY || "",
     apiUrl: process.env.KHALTI_API_URL || "https://dev.khalti.com/api/v2",
     returnUrl:
-      process.env.KHALTI_RETURN_URL ||
-      "http://localhost:5000/api/orders/confirm-payment",
+      process.env.KHALTI_RETURN_URL || `${appUrl}/api/orders/confirm-payment`,
   },
 
   fonepay: {
@@ -39,8 +42,7 @@ const config = {
       process.env.FONEPAY_API_URL ||
       "https://dev.fonepay.com/api/merchant/merchantDetailsForThirdParty",
     returnUrl:
-      process.env.FONEPAY_RETURN_URL ||
-      "http://localhost:5173/payment/fonepay-verify",
+      process.env.FONEPAY_RETURN_URL || `${frontendUrl}payment/fonepay-verify`,
   },
 
   emailApiKey: process.env.EMAIL_API_KEY || "",
@@ -48,4 +50,3 @@ const config = {
 };
 
 export default config;
-

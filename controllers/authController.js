@@ -7,6 +7,7 @@ const cookieOptions = {
   sameSite: "lax",
   secure: process.env.NODE_ENV === "production",
 };
+
 const register = async (req, res) => {
   try {
     const { password, confirmPassword } = req.body;
@@ -17,7 +18,7 @@ const register = async (req, res) => {
     if (password !== confirmPassword)
       return res.status(400).json({ message: "Passwords do not match." });
     const data = await authService.register(req.body);
-    res.status(201).json(data); // no cookie — must verify email first
+    res.status(201).json(data); // no cookie â€” must verify email first
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -38,6 +39,7 @@ const verifyEmail = async (req, res) => {
     res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
+
 const resendVerification = async (req, res) => {
   try {
     const { email } = req.body;
@@ -55,7 +57,6 @@ const login = async (req, res) => {
     if (!email) return res.status(400).json({ message: "Email is required." });
     if (!password)
       return res.status(400).json({ message: "Password is required." });
-
     const data = await authService.login({ email, password });
     const authToken = createJWT(data);
     res.cookie("authToken", authToken, cookieOptions);
@@ -105,8 +106,6 @@ const logout = async (req, res) => {
 const getMe = async (req, res) => {
   res.json(req.user);
 };
-
-
 
 export default {
   register,
