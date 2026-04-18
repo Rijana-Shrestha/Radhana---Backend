@@ -96,7 +96,7 @@ const resendVerification = async (email) => {
   const verifyToken = crypto.randomBytes(32).toString("hex");
   await User.findByIdAndUpdate(user._id, { emailVerifyToken: verifyToken });
 
-  const verifyLink = `${config.frontendUrl}/verify-email?token=${verifyToken}&userId=${user._id}`;
+  const verifyLink = `${config.appUrl}/verify-email?token=${verifyToken}&userId=${user._id}`;
   const { subject, html } = templates.welcomeVerification({
     name: user.name,
     verifyLink,

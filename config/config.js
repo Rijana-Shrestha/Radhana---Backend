@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const appUrl = process.env.APP_URL || "http://localhost:5000";
+const appUrl = process.env.APP_URL || "https://radhana-art.onrender.com";
 const frontendUrl =
   process.env.FRONTEND_URL || "https://radhanaenterprises.com.np/";
 
@@ -32,6 +32,8 @@ const config = {
     returnUrl:
       process.env.KHALTI_RETURN_URL || `${appUrl}/api/orders/confirm-payment`,
   },
+
+  backendUrl: appUrl,
 
   fonepay: {
     merchantId: process.env.FONEPAY_MERCHANT_ID || "",
