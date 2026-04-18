@@ -1,6 +1,6 @@
 import Contact from "../models/Contact.js";
 import uploadFile from "../utils/file.js";
-import sendEmail from "../utils/email.js";
+import sendEmail, { templates } from "../utils/email.js";
 import config from "../config/config.js";
 
 const createMessage = async (data, file) => {
@@ -13,18 +13,29 @@ const createMessage = async (data, file) => {
 
   const message = await Contact.create({ ...data, attachmentUrl });
 
-  // Notify admin by email (non-blocking)
-  sendEmail(config.adminEmail, {
-    subject: `New Contact Message: ${data.subject}`,
-    body: `
-      <h3>New message from ${data.name}</h3>
-      <p><strong>Phone:</strong> ${data.phone}</p>
-      <p><strong>Email:</strong> ${data.email || "N/A"}</p>
-      <p><strong>Subject:</strong> ${data.subject}</p>
-      <p><strong>Message:</strong><br/>${data.message}</p>
-      ${attachmentUrl ? `<p><strong>Attachment:</strong> <a href="${attachmentUrl}">View File</a></p>` : ""}
-    `,
-  }).catch((err) => console.error("Email notify error:", err));
+  // 1. Notify admin (non-blocking)
+  const adminTpl = templates.contactNotification({
+    name: data.name,
+    phone: data.phone,
+    email: data.email || "Not provided",
+    subject: data.subject,
+    message: data.message,
+    attachmentUrl,
+  });
+  sendEmail(config.adminEmail, adminTpl).catch((err) =>
+    console.error("Admin notify email error:", err),
+  );
+
+  // 2. Auto-reply to user if they provided an email (non-blocking)
+  if (data.email) {
+    const userTpl = templates.contactAutoReply({
+      name: data.name,
+      subject: data.subject,
+    });
+    sendEmail(data.email, userTpl).catch((err) =>
+      console.error("Auto-reply email error:", err),
+    );
+  }
 
   return message;
 };

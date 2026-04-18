@@ -13,6 +13,7 @@ import contactRoutes from "./routes/contactRoute.js";
 import galleryRoutes from "./routes/galleryRoute.js";
 import invoiceRoutes from "./routes/invoiceRoute.js";
 import cartRoutes from "./routes/cartRoute.js";
+import adminRoutes from "./routes/adminRoute.js";
 import categoryRoutes from "./routes/categoryRoute.js";
 import bodyParser from "body-parser";
 import logger from "./middlewares/logger.js";
@@ -32,7 +33,7 @@ connectCloudinary();
 // ── CORS ── allow your frontend origin (update in production)
 app.use(
   cors({
-    origin: config.frontendUrl || "http://localhost:5173", // Live Server default
+    origin: config.frontendUrl || "https://radhana-frontend-73xp.onrender.com/", // Live Server default
     credentials: true, // allow cookies
   }),
 );
@@ -51,6 +52,7 @@ app.use("/api/users", auth, upload.single("image"), userRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/invoices", auth, invoiceRoutes);
 app.use("/api/cart", auth, cartRoutes);
+app.use("/api/admin", auth, adminRoutes);
 app.use("/api/categories", categoryRoutes);
 
 // Gallery accepts multiple files + text fields (title, category, description, etc.)
