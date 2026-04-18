@@ -1,9 +1,17 @@
 import { verifyJWT } from "../utils/jwt.js";
 
-// Extracts JWT from cookie and attaches user data to req.user
+// Extracts JWT from cookie or Authorization header and attaches user data to req.user
 const auth = async (req, res, next) => {
-  // cookie-parser populates req.cookies automatically
-  const authToken = req.cookies?.authToken;
+  // Check for token in cookies first
+  let authToken = req.cookies?.authToken;
+
+  // If not in cookies, check Authorization header
+  if (!authToken) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      authToken = authHeader.substring(7); // Remove "Bearer " prefix
+    }
+  }
 
   if (!authToken) {
     return res.status(401).json({ message: "User not authenticated." });
