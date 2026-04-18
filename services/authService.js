@@ -53,11 +53,11 @@ const register = async (data) => {
   } catch (emailErr) {
     // Clean up the created user so they can try again
     await User.findByIdAndDelete(created._id);
-    console.error("Verification email failed:", emailErr);
+    console.error("Verification email failed:", emailErr.message || emailErr);
     throw {
       statusCode: 500,
       message:
-        "Failed to send verification email. Please check your email address and try again.",
+        "Failed to send verification email. Please check your email address and try again. If the problem persists, please contact support.",
     };
   }
 
@@ -108,7 +108,7 @@ const resendVerification = async (email) => {
 // ── LOGIN ─────────────────────────────────────────────────────
 const login = async (data) => {
   const user = await User.findOne({ email: data.email.toLowerCase() });
-  if (!user) throw { statusCode: 404, message: "User not found." };
+  if (!user) throw { statusCode: 404, message: "No account found with this email. Please register first." };
 
   const isMatch = bcrypt.compareSync(data.password, user.password);
   if (!isMatch)
@@ -117,7 +117,7 @@ const login = async (data) => {
   if (!user.isEmailVerified)
     throw {
       statusCode: 403,
-      message: "Please verify your email before logging in. Check your inbox.",
+      message: "Your email is not verified yet. Please check your inbox for the verification link and verify your email before logging in.",
       emailNotVerified: true,
       email: user.email,
     };

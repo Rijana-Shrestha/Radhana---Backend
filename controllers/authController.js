@@ -20,6 +20,7 @@ const register = async (req, res) => {
     const data = await authService.register(req.body);
     res.status(201).json(data); // no cookie — must verify email first
   } catch (error) {
+    console.error("Register error:", error.message || error);
     res.status(error.statusCode || 500).json({ message: error.message });
   }
 };
