@@ -11,6 +11,9 @@ router.post("/login", authController.login);
 router.post("/logout", authController.logout);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
+router.post("/verify-email", authController.verifyEmail);
+router.get("/check-verification", authController.checkVerificationStatus);
+// Returns current user data — used by frontend to check login state
 router.get("/me", auth, authController.getMe);
 
 export default router;

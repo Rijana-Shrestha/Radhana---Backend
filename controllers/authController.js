@@ -3,9 +3,9 @@ import { createJWT } from "../utils/jwt.js";
 
 const cookieOptions = {
   httpOnly: true,
-  maxAge: 86400 * 1000,
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
+  maxAge: 86400 * 1000, // 1 day
+  sameSite: "None", // Required for cross-domain cookie sharing
+  secure: true, // Must be true when sameSite is "None"
 };
 
 // POST /api/auth/register
@@ -22,25 +22,6 @@ const register = async (req, res) => {
     const data = await authService.register(req.body);
     // Do NOT set cookie — user must verify email first
     res.status(201).json(data);
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ message: error.message });
-  }
-};
-
-// GET /api/auth/verify-email?token=...&userId=...
-const verifyEmail = async (req, res) => {
-  try {
-    const { token, userId } = req.query;
-    if (!token || !userId)
-      return res
-        .status(400)
-        .json({ message: "Token and userId are required." });
-
-    const user = await authService.verifyEmail(userId, token);
-    // Now log them in — set cookie
-    const authToken = createJWT(user);
-    res.cookie("authToken", authToken, cookieOptions);
-    res.json({ ...user, verified: true });
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message });
   }
@@ -118,6 +99,38 @@ const getMe = async (req, res) => {
   res.json(req.user);
 };
 
+// GET /api/auth/verify-email?token=...&userId=...
+const verifyEmail = async (req, res) => {
+  try {
+    const { token, userId } = req.query;
+    if (!token || !userId)
+      return res
+        .status(400)
+        .json({ message: "Token and userId are required." });
+
+    const user = await authService.verifyEmail(userId, token);
+    // Now log them in — set cookie
+    const authToken = createJWT(user);
+    res.cookie("authToken", authToken, cookieOptions);
+    res.json({ ...user, verified: true });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// GET /api/auth/check-verification?email=...
+const checkVerificationStatus = async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ message: "Email is required." });
+
+    const status = await authService.checkVerificationStatus(email);
+    res.json(status);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 export default {
   register,
   verifyEmail,
@@ -127,4 +140,5 @@ export default {
   resetPassword,
   logout,
   getMe,
+  checkVerificationStatus,
 };
