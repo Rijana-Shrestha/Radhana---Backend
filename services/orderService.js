@@ -1,5 +1,6 @@
 import Order from "../models/Order.js";
 import Payment from "../models/Payment.js";
+import Invoice from "../models/Invoice.js";
 import crypto from "crypto";
 import paymentUtil from "../utils/payment.js";
 import { ORDER_STATUS_CONFIRMED } from "../constants/orderStatus.js";
@@ -62,18 +63,120 @@ const deleteOrder = async (id, user) => {
   return await Order.findByIdAndDelete(id);
 };
 
-// ── KHALTI: Step 1 — Initiate payment ────────────────────────
-// Per Khalti docs:
-// - POST to /epayment/initiate/ with amount in PAISA
-// - Returns { pidx, payment_url } → redirect user to payment_url
-// - Khalti redirects user back to return_url with pidx, purchase_order_id, status
+// ── SHARED: runs after ANY successful payment (Khalti or Fonepay) ─────────
+// 1. Marks Payment as COMPLETED with paidAt timestamp + gateway response
+// 2. Confirms the Order
+// 3. Auto-generates an Invoice marked "paid" linked to the order
+// 4. Prevents double-payment fraud by checking existing payment status
+const finalizePayment = async ({
+  order,
+  paymentId,
+  method,
+  transactionId,
+  gatewayResponse,
+}) => {
+  // ── Fraud prevention: block double payment ──────────────────
+  const existingPayment = await Payment.findById(paymentId);
+  if (existingPayment?.status === PAYMENT_STATUS_COMPLETED) {
+    throw {
+      statusCode: 409,
+      message:
+        "This payment has already been processed. Possible duplicate request.",
+    };
+  }
+
+  const paidAt = new Date();
+
+  // ── 1. Update Payment record ────────────────────────────────
+  await Payment.findByIdAndUpdate(paymentId, {
+    status: PAYMENT_STATUS_COMPLETED,
+    transactionId,
+    paidAt,
+    gatewayResponse, // full gateway response snapshot for audit
+  });
+
+  // ── 2. Confirm Order ────────────────────────────────────────
+  const confirmedOrder = await Order.findByIdAndUpdate(
+    order._id,
+    { status: ORDER_STATUS_CONFIRMED },
+    { new: true },
+  );
+
+  // ── 3. Auto-generate Invoice marked as paid ─────────────────
+  // Only create if order doesn't already have an invoice
+  if (!order.isInvoiceGenerated) {
+    try {
+      const prefix = "INV";
+      const count = await Invoice.countDocuments({ type: "tax_invoice" });
+      const invoiceNumber = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}-${count + 1}`;
+
+      const items = (order.orderItems || []).map((item) => ({
+        itemName: item.product?.name || "Product",
+        description: "",
+        quantity: item.quantity || 1,
+        pricePerUnit: item.price || 0,
+        amount: (item.quantity || 1) * (item.price || 0),
+      }));
+
+      const subTotal = items.reduce((s, i) => s + i.amount, 0);
+
+      const invoice = await Invoice.create({
+        invoiceNumber,
+        type: "tax_invoice",
+        order: order._id,
+        billTo: {
+          name: `${order.shippingAddress?.firstName || ""} ${order.shippingAddress?.lastName || ""}`.trim(),
+          address:
+            `${order.shippingAddress?.street || ""}, ${order.shippingAddress?.city || ""}`.trim(),
+          phone: order.shippingAddress?.phone || "",
+          email: order.shippingAddress?.email || "",
+        },
+        items,
+        subTotal,
+        taxRate: 0,
+        taxAmount: 0,
+        discount: 0,
+        totalAmount: order.totalPrice,
+        receivedAmount: order.totalPrice,
+        balanceAmount: 0,
+        paymentMethod: method, // "khalti" or "fonepay"
+        paymentStatus: "paid", // ✅ marked paid immediately
+        paidAt, // exact payment timestamp
+        gatewayTransactionId: transactionId, // for cross-referencing gateway dashboard
+        notes: `Payment confirmed via ${method.toUpperCase()}. Transaction ID: ${transactionId}`,
+      });
+
+      // Link invoice back to order
+      await Order.findByIdAndUpdate(order._id, {
+        invoice: invoice._id,
+        isInvoiceGenerated: true,
+      });
+    } catch (invoiceErr) {
+      // Invoice creation failure should NOT fail the payment — just log it
+      console.error(
+        "Auto-invoice creation failed (non-blocking):",
+        invoiceErr.message,
+      );
+    }
+  }
+
+  return confirmedOrder;
+};
+
+// ── KHALTI: Step 1 — Initiate ─────────────────────────────────
 const orderPayment = async (id, user) => {
   const order = await getOrderById(id);
   if (order.user._id.toString() !== user._id.toString())
     throw { statusCode: 403, message: "Access Denied." };
 
-  const transactionId = crypto.randomUUID();
+  // Prevent re-initiating if already paid
+  if (order.payment) {
+    const existingPayment = await Payment.findById(order.payment);
+    if (existingPayment?.status === PAYMENT_STATUS_COMPLETED)
+      throw { statusCode: 409, message: "This order has already been paid." };
+  }
 
+  const transactionId = crypto.randomUUID();
   const orderPaymentDoc = await Payment.create({
     amount: order.totalPrice,
     method: "khalti",
@@ -82,9 +185,8 @@ const orderPayment = async (id, user) => {
 
   await Order.findByIdAndUpdate(id, { payment: orderPaymentDoc._id });
 
-  // amount * 100 converts NPR to paisa as required by Khalti docs
   const khaltiData = await paymentUtil.payViaKhalti({
-    amount: order.totalPrice * 100,
+    amount: order.totalPrice * 100, // paisa
     purchaseOrderId: order._id.toString(),
     purchaseOrderName: order.orderNumber,
     customer: {
@@ -95,23 +197,18 @@ const orderPayment = async (id, user) => {
     },
   });
 
-  // Save pidx for later lookup verification
   await Payment.findByIdAndUpdate(orderPaymentDoc._id, {
     pidx: khaltiData.pidx,
   });
 
   return {
-    payment_url: khaltiData.payment_url, // frontend redirects user here
+    payment_url: khaltiData.payment_url,
     pidx: khaltiData.pidx,
     orderId: id,
   };
 };
 
-// ── KHALTI: Step 2 — Verify payment via Lookup API ───────────
-// Per Khalti docs:
-// - POST to /epayment/lookup/ with { pidx }
-// - ONLY status "Completed" means success — all others are failures
-// - Called by frontend's /payment/verify page after Khalti callback
+// ── KHALTI: Step 2 — Verify ───────────────────────────────────
 const verifyKhaltiPayment = async (pidx, orderId, user) => {
   const order = await getOrderById(orderId);
   if (order.user._id.toString() !== user._id.toString())
@@ -119,7 +216,6 @@ const verifyKhaltiPayment = async (pidx, orderId, user) => {
 
   const khaltiResponse = await paymentUtil.verifyKhaltiPayment(pidx);
 
-  // Per docs: ONLY "Completed" = success. Pending/Expired/Canceled/Refunded = fail
   if (khaltiResponse.status !== "Completed") {
     await Payment.findByIdAndUpdate(order.payment._id, {
       status: PAYMENT_STATUS_FAILED,
@@ -130,30 +226,29 @@ const verifyKhaltiPayment = async (pidx, orderId, user) => {
     };
   }
 
-  await Payment.findByIdAndUpdate(order.payment._id, {
-    status: PAYMENT_STATUS_COMPLETED,
+  return await finalizePayment({
+    order,
+    paymentId: order.payment._id,
+    method: "khalti",
     transactionId: khaltiResponse.transaction_id,
-    pidx,
+    gatewayResponse: khaltiResponse, // full Khalti lookup response saved
   });
-
-  return await Order.findByIdAndUpdate(
-    orderId,
-    { status: ORDER_STATUS_CONFIRMED },
-    { new: true },
-  );
 };
 
-// ── FONEPAY: initiate ─────────────────────────────────────────
-// ── FONEPAY: Step 1 — Initiate web payment ───────────────────
-// PRN (payment reference number) encodes the orderId so we can look it up
-// after Fonepay redirects back. Format: FP-{orderId}-{timestamp}
+// ── FONEPAY: Step 1 — Initiate ────────────────────────────────
 const orderPaymentFonepay = async (id, user) => {
   const order = await getOrderById(id);
   if (order.user._id.toString() !== user._id.toString())
     throw { statusCode: 403, message: "Access Denied." };
 
-  const transactionId = crypto.randomUUID();
+  // Prevent re-initiating if already paid
+  if (order.payment) {
+    const existingPayment = await Payment.findById(order.payment);
+    if (existingPayment?.status === PAYMENT_STATUS_COMPLETED)
+      throw { statusCode: 409, message: "This order has already been paid." };
+  }
 
+  const transactionId = crypto.randomUUID();
   const orderPaymentDoc = await Payment.create({
     amount: order.totalPrice,
     method: "fonepay",
@@ -162,34 +257,27 @@ const orderPaymentFonepay = async (id, user) => {
 
   await Order.findByIdAndUpdate(id, { payment: orderPaymentDoc._id });
 
-  // PRN encodes orderId so frontend can retrieve it from Fonepay callback
   const prn = `FP-${id}-${Date.now()}`;
-
   const { paymentUrl } = paymentUtil.initiateFonepay({
-    amount: order.totalPrice, // NPR (not paisa)
+    amount: order.totalPrice,
     purchaseOrderId: prn,
     purchaseOrderName: order.orderNumber,
     remarks1: order.orderNumber,
     remarks2: "Radhana Art",
   });
 
-  // Save PRN to payment doc so we can match on callback
   await Payment.findByIdAndUpdate(orderPaymentDoc._id, { transactionId: prn });
 
   return { paymentUrl, prn, orderId: id };
 };
 
-// ── FONEPAY: Step 2 — Verify callback ────────────────────────
-// Fonepay calls the return URL with: PRN, PID, PS, RC, UID, BC, INI, P_AMT, R_AMT, DV
-// 1. Validate response DV signature
-// 2. Extract orderId from PRN (format: FP-{orderId}-{timestamp})
-// 3. Call verificationMerchant API for final confirmation
+// ── FONEPAY: Step 2 — Verify ──────────────────────────────────
 const verifyFonepayPayment = async (callbackParams, orderId, user) => {
   const order = await getOrderById(orderId);
   if (order.user._id.toString() !== user._id.toString())
     throw { statusCode: 403, message: "Access Denied." };
 
-  // Step 1: Validate callback signature
+  // Validate callback signature
   let isSuccess;
   try {
     isSuccess = paymentUtil.validateFonepayCallback(callbackParams);
@@ -210,10 +298,9 @@ const verifyFonepayPayment = async (callbackParams, orderId, user) => {
     };
   }
 
-  // Step 2: Call verificationMerchant API for final confirmation
+  // Final verification via verificationMerchant API
   const verification =
     await paymentUtil.verifyFonepayWebPayment(callbackParams);
-
   if (!verification.success) {
     await Payment.findByIdAndUpdate(order.payment._id, {
       status: PAYMENT_STATUS_FAILED,
@@ -224,19 +311,13 @@ const verifyFonepayPayment = async (callbackParams, orderId, user) => {
     };
   }
 
-  // Step 3: Mark payment and order as completed
-  await Payment.findByIdAndUpdate(order.payment._id, {
-    status: PAYMENT_STATUS_COMPLETED,
-    transactionId:
-      callbackParams.UID || callbackParams.BID || callbackParams.PRN,
-    fonepayRef: callbackParams.UID,
+  return await finalizePayment({
+    order,
+    paymentId: order.payment._id,
+    method: "fonepay",
+    transactionId: callbackParams.UID || callbackParams.PRN,
+    gatewayResponse: { ...callbackParams, verification }, // full callback + verification saved
   });
-
-  return await Order.findByIdAndUpdate(
-    orderId,
-    { status: ORDER_STATUS_CONFIRMED },
-    { new: true },
-  );
 };
 
 const confirmOrderPayment = async (id, status, user) => {

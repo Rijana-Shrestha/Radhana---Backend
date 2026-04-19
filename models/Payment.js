@@ -29,6 +29,10 @@ const paymentSchema = new mongoose.Schema({
   pidx: { type: String, default: "" },
   // Fonepay specific
   fonepayRef: { type: String, default: "" },
+  // Fraud prevention: exact timestamp payment was confirmed by gateway
+  paidAt: { type: Date, default: null },
+  // Gateway response snapshot for audit trail
+  gatewayResponse: { type: mongoose.Schema.Types.Mixed, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 
