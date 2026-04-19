@@ -76,7 +76,7 @@ const orderSchema = new mongoose.Schema({
   // Payment method chosen at checkout
   paymentMethod: {
     type: String,
-    enum: ["esewa", "khalti", "bank", "cod", "cash"],
+    enum: ["esewa", "khalti", "bank", "cod", "fonepay", "cash"],
     default: "cod",
   },
   payment: {
