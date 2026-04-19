@@ -38,13 +38,14 @@ const config = {
   fonepay: {
     merchantId: process.env.FONEPAY_MERCHANT_ID || "",
     secretKey: process.env.FONEPAY_SECRET_KEY || "",
-    // Sandbox: https://dev.fonepay.com/api/merchant/merchantDetailsForThirdParty
-    // Production: https://fonepay.com/api/merchant/merchantDetailsForThirdParty
-    apiUrl:
-      process.env.FONEPAY_API_URL ||
-      "https://dev.fonepay.com/api/merchant/merchantDetailsForThirdParty",
+    // Web payment portal (NOT the Dynamic QR URL)
+    // Sandbox: https://dev-clientapi.fonepay.com
+    // Production: https://clientapi.fonepay.com
+    pgUrl: process.env.FONEPAY_PG_URL || "https://dev-clientapi.fonepay.com",
+    // Must include /#/ for hash routing
     returnUrl:
-      process.env.FONEPAY_RETURN_URL || `${frontendUrl}payment/fonepay-verify`,
+      process.env.FONEPAY_RETURN_URL ||
+      `${frontendUrl}/#/payment/fonepay-verify`,
   },
 
   emailApiKey: process.env.EMAIL_API_KEY || "",

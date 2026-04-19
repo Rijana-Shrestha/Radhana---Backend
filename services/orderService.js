@@ -144,6 +144,9 @@ const verifyKhaltiPayment = async (pidx, orderId, user) => {
 };
 
 // ── FONEPAY: initiate ─────────────────────────────────────────
+// ── FONEPAY: Step 1 — Initiate web payment ───────────────────
+// PRN (payment reference number) encodes the orderId so we can look it up
+// after Fonepay redirects back. Format: FP-{orderId}-{timestamp}
 const orderPaymentFonepay = async (id, user) => {
   const order = await getOrderById(id);
   if (order.user._id.toString() !== user._id.toString())
@@ -159,41 +162,74 @@ const orderPaymentFonepay = async (id, user) => {
 
   await Order.findByIdAndUpdate(id, { payment: orderPaymentDoc._id });
 
-  const { paymentUrl, params } = paymentUtil.initiateFonepay({
-    amount: order.totalPrice,
-    purchaseOrderId: order.orderNumber,
+  // PRN encodes orderId so frontend can retrieve it from Fonepay callback
+  const prn = `FP-${id}-${Date.now()}`;
+
+  const { paymentUrl } = paymentUtil.initiateFonepay({
+    amount: order.totalPrice, // NPR (not paisa)
+    purchaseOrderId: prn,
     purchaseOrderName: order.orderNumber,
+    remarks1: order.orderNumber,
+    remarks2: "Radhana Art",
   });
 
-  return { paymentUrl, params, orderId: id };
+  // Save PRN to payment doc so we can match on callback
+  await Payment.findByIdAndUpdate(orderPaymentDoc._id, { transactionId: prn });
+
+  return { paymentUrl, prn, orderId: id };
 };
 
-// ── FONEPAY: verify callback ──────────────────────────────────
+// ── FONEPAY: Step 2 — Verify callback ────────────────────────
+// Fonepay calls the return URL with: PRN, PID, PS, RC, UID, BC, INI, P_AMT, R_AMT, DV
+// 1. Validate response DV signature
+// 2. Extract orderId from PRN (format: FP-{orderId}-{timestamp})
+// 3. Call verificationMerchant API for final confirmation
 const verifyFonepayPayment = async (callbackParams, orderId, user) => {
   const order = await getOrderById(orderId);
   if (order.user._id.toString() !== user._id.toString())
     throw { statusCode: 403, message: "Access Denied." };
 
-  const { isValid, isSuccess, transactionId } =
-    paymentUtil.verifyFonepayPayment(callbackParams);
-
-  if (!isValid)
-    throw {
-      statusCode: 400,
-      message: "Invalid payment signature. Possible tampering detected.",
-    };
+  // Step 1: Validate callback signature
+  let isSuccess;
+  try {
+    isSuccess = paymentUtil.validateFonepayCallback(callbackParams);
+  } catch (err) {
+    await Payment.findByIdAndUpdate(order.payment._id, {
+      status: PAYMENT_STATUS_FAILED,
+    });
+    throw err;
+  }
 
   if (!isSuccess) {
     await Payment.findByIdAndUpdate(order.payment._id, {
       status: PAYMENT_STATUS_FAILED,
     });
-    throw { statusCode: 400, message: "Fonepay payment was not successful." };
+    throw {
+      statusCode: 400,
+      message: "Fonepay payment was not successful. RC: " + callbackParams.RC,
+    };
   }
 
+  // Step 2: Call verificationMerchant API for final confirmation
+  const verification =
+    await paymentUtil.verifyFonepayWebPayment(callbackParams);
+
+  if (!verification.success) {
+    await Payment.findByIdAndUpdate(order.payment._id, {
+      status: PAYMENT_STATUS_FAILED,
+    });
+    throw {
+      statusCode: 400,
+      message: "Fonepay payment verification failed: " + verification.message,
+    };
+  }
+
+  // Step 3: Mark payment and order as completed
   await Payment.findByIdAndUpdate(order.payment._id, {
     status: PAYMENT_STATUS_COMPLETED,
-    transactionId,
-    fonepayRef: callbackParams.BID,
+    transactionId:
+      callbackParams.UID || callbackParams.BID || callbackParams.PRN,
+    fonepayRef: callbackParams.UID,
   });
 
   return await Order.findByIdAndUpdate(

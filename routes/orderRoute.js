@@ -20,7 +20,8 @@ router.get("/:id/verify-khalti", orderController.verifyKhaltiPayment);
 
 // Fonepay
 router.post("/:id/payment/fonepay", orderController.orderPaymentViaFonepay);
-router.get("/:id/verify-fonepay", orderController.verifyFonepayPayment);
+// Fonepay callback: orderId is extracted from PRN query param
+router.get("/verify-fonepay", orderController.verifyFonepayPayment);
 
 // Legacy confirm
 router.put("/:id/confirm-payment", orderController.confirmOrderPayment);

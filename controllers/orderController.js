@@ -115,12 +115,25 @@ const orderPaymentViaFonepay = async (req, res) => {
 };
 
 // ── FONEPAY: verify callback ──────────────────────────────────
-// GET /api/orders/:id/verify-fonepay?PRN=...&BID=...&RC=...&DV=...
+// GET /api/orders/verify-fonepay?PRN=FP-{orderId}-{ts}&RC=...&DV=...
+// Note: No :id param — orderId is extracted from PRN
 const verifyFonepayPayment = async (req, res) => {
   try {
+    // Extract orderId from PRN (format: FP-{orderId}-{timestamp})
+    const prn = req.query.PRN || "";
+    const parts = prn.split("-");
+    // PRN format: FP-{mongoId(24chars)}-{timestamp}
+    // parts[0]=FP, parts[1]=orderId, parts[2..]=timestamp parts
+    const orderId = parts.length >= 2 ? parts[1] : null;
+
+    if (!orderId)
+      return res
+        .status(400)
+        .json({ message: "Cannot extract order ID from PRN: " + prn });
+
     const data = await orderService.verifyFonepayPayment(
       req.query,
-      req.params.id,
+      orderId,
       req.user,
     );
     res.json(data);
