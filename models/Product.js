@@ -6,21 +6,10 @@ const productSchema = new mongoose.Schema({
     required: [true, "Product name is required."],
     trim: true,
   },
-  // Radhana Art categories: wooden, qr, keyring, award, numberplate, signboard, neon, mug, leafart
   category: {
-    type: String,
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Category",
     required: [true, "Product category is required."],
-    enum: [
-      "wooden",
-      "qr",
-      "keyring",
-      "award",
-      "numberplate",
-      "signboard",
-      "neon",
-      "mug",
-      "leafart",
-    ],
   },
   // Broader catalog grouping
   cat: {
