@@ -22,15 +22,9 @@ const getAllProducts = async (query) => {
 
   const filters = { isActive: true };
 
-  // Category filter - convert category name to ObjectId
-  if (category) {
-    const categoryDoc = await Category.findOne({ name: category.toLowerCase() });
-    if (categoryDoc) filters.category = categoryDoc._id;
-  }
-  if (type) {
-    const categoryDoc = await Category.findOne({ name: type.toLowerCase() });
-    if (categoryDoc) filters.category = categoryDoc._id;
-  }
+  // Category filter - store category name
+  if (category) filters.category = category.toLowerCase();
+  if (type) filters.category = type.toLowerCase(); // frontend uses ?type=
 
   // Broad catalog filter (personalized / corporate / homedecor)
   if (cat) filters.cat = cat;
@@ -77,7 +71,7 @@ const createProduct = async (data, files, createdBy) => {
       };
     }
 
-    // Validate category and get its ObjectId
+    // Validate category exists
     const categoryDoc = await Category.findOne({ name: data.category.toLowerCase() });
     if (!categoryDoc) {
       const validCategories = await Category.find().distinct('name');
@@ -114,7 +108,7 @@ const createProduct = async (data, files, createdBy) => {
 
     const created = await Product.create({
       ...data,
-      category: categoryDoc._id,
+      category: data.category.toLowerCase(),
       createdBy,
       imageUrls,
       price: Number(data.price),
@@ -144,7 +138,7 @@ const updateProduct = async (id, data, files, user) => {
 
   const updateData = { ...data };
 
-  // If category is being updated, validate and convert to ObjectId
+  // If category is being updated, validate it exists and store the name
   if (updateData.category) {
     const categoryDoc = await Category.findOne({ name: updateData.category.toLowerCase() });
     if (!categoryDoc) {
@@ -154,7 +148,7 @@ const updateProduct = async (id, data, files, user) => {
         message: `Invalid category. Must be one of: ${validCategories.join(", ")}`
       };
     }
-    updateData.category = categoryDoc._id;
+    updateData.category = updateData.category.toLowerCase();
   }
 
   if (files && Array.isArray(files) && files.length > 0) {
