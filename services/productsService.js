@@ -22,9 +22,15 @@ const getAllProducts = async (query) => {
 
   const filters = { isActive: true };
 
-  // Category filter (e.g. ?category=wooden or ?type=wooden)
-  if (category) filters.category = category;
-  if (type) filters.category = type; // frontend uses ?type=
+  // Category filter - convert category name to ObjectId
+  if (category) {
+    const categoryDoc = await Category.findOne({ name: category.toLowerCase() });
+    if (categoryDoc) filters.category = categoryDoc._id;
+  }
+  if (type) {
+    const categoryDoc = await Category.findOne({ name: type.toLowerCase() });
+    if (categoryDoc) filters.category = categoryDoc._id;
+  }
 
   // Broad catalog filter (personalized / corporate / homedecor)
   if (cat) filters.cat = cat;
@@ -71,9 +77,10 @@ const createProduct = async (data, files, createdBy) => {
       };
     }
 
-    // Validate category is valid
-    const validCategories = await Category.find().distinct('name');
-    if (!validCategories.includes(data.category.toLowerCase())) {
+    // Validate category and get its ObjectId
+    const categoryDoc = await Category.findOne({ name: data.category.toLowerCase() });
+    if (!categoryDoc) {
+      const validCategories = await Category.find().distinct('name');
       throw {
         statusCode: 400,
         message: `Invalid category. Must be one of: ${validCategories.join(", ")}`
@@ -107,6 +114,7 @@ const createProduct = async (data, files, createdBy) => {
 
     const created = await Product.create({
       ...data,
+      category: categoryDoc._id,
       createdBy,
       imageUrls,
       price: Number(data.price),
@@ -135,6 +143,19 @@ const updateProduct = async (id, data, files, user) => {
   }
 
   const updateData = { ...data };
+
+  // If category is being updated, validate and convert to ObjectId
+  if (updateData.category) {
+    const categoryDoc = await Category.findOne({ name: updateData.category.toLowerCase() });
+    if (!categoryDoc) {
+      const validCategories = await Category.find().distinct('name');
+      throw {
+        statusCode: 400,
+        message: `Invalid category. Must be one of: ${validCategories.join(", ")}`
+      };
+    }
+    updateData.category = categoryDoc._id;
+  }
 
   if (files && Array.isArray(files) && files.length > 0) {
     try {
