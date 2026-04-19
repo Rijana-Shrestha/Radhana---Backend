@@ -19,7 +19,6 @@ const register = async (req, res) => {
     if (password !== confirmPassword)
       return res.status(400).json({ message: "Passwords do not match." });
 
-    // Returns { message } — user must verify email before login
     const data = await authService.register(req.body);
     res.status(201).json(data);
   } catch (error) {
@@ -38,11 +37,12 @@ const verifyEmail = async (req, res) => {
 
     const user = await authService.verifyEmail(userId, token);
 
-    // Log user in immediately after verification
     const authToken = createJWT(user);
     res.cookie("authToken", authToken, cookieOptions);
+    // ✅ Return token in body so mobile browsers can store it in localStorage
     res.json({
       ...user,
+      authToken,
       message: "Email verified successfully! You are now logged in.",
     });
   } catch (error) {
@@ -72,7 +72,8 @@ const login = async (req, res) => {
     const data = await authService.login({ email, password });
     const authToken = createJWT(data);
     res.cookie("authToken", authToken, cookieOptions);
-    res.json(data);
+    // ✅ Return token in body so mobile browsers can store it in localStorage
+    res.json({ ...data, authToken });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       message: error.message,
