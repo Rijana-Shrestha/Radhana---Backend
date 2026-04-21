@@ -30,13 +30,13 @@ const upload = multer({
 connectDB();
 connectCloudinary();
 
-// ── CORS ──────────────────────────────────────────────────────
+// ── CORS ─────────────────────────────────────────────────────
 // Frontend (radhanaenterprises.com.np) is on a different domain from the
 // backend (onrender.com), so we must explicitly allow that origin with
 // credentials so cross-domain cookies work correctly.
 const allowedOrigins = [
-  "https://radhanaenterprises.com.np",
-  "https://www.radhanaenterprises.com.np",
+  "https://radhana.com.np",
+  "https://www.radhana.com.np",
   "https://radhana-frontend-73xp.onrender.com", // fallback preview URL
 ];
 
