@@ -194,7 +194,7 @@ async function sendEmail(recipient, { subject, html, body }) {
     );
   }
   const { data, error } = await resend.emails.send({
-    from: `${BRAND.name} <noreply@radhanaenterprises.com.np>`,
+    from: `${BRAND.name} <info@radhana.com.np>`,
     to: [recipient],
     subject,
     html: html || body,
