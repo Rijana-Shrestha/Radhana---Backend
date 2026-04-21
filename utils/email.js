@@ -10,9 +10,9 @@ const BRAND = {
   name: "Radhana Art",
   tagline: "Laser Engraving · Kathmandu, Nepal",
   phone: "+977 9823939106",
-  email: "info@radhanaenterprises.com.np",
+  email: "info@radhana.com.np",
   address: "Sitapaila, Kathmandu, Nepal",
-  website: "https://radhanaenterprises.com.np",
+  website: "https://radhana.com.np",
   emoji: "🪷",
 };
 
