@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import config from "../config/config.js";
+import logo from "../../frontend/Assets/radhana-logo.png";
 
 const resend = new Resend(config.emailApiKey);
 
@@ -13,7 +14,7 @@ const BRAND = {
   email: "info@radhana.com.np",
   address: "Sitapaila, Kathmandu, Nepal",
   website: "https://radhana.com.np",
-  emoji: "🪷",
+  emoji: "logo",
 };
 
 const shell = (body) => `<!DOCTYPE html>
@@ -112,21 +113,6 @@ export const templates = {
       <hr class="divider"/>
       <p style="font-size:13px;color:#9ca3af;">If the button doesn't work:<br/>
       <a href="${resetLink}" style="word-break:break-all;font-size:12px;">${resetLink}</a></p>
-    `),
-  }),
-
-  twoFactorOTP: ({ name, otp }) => ({
-    subject: `${otp} — Your Radhana Art Login Code`,
-    html: shell(`
-      <h2>Login Verification Code</h2>
-      <p>Hello <strong>${name}</strong>,</p>
-      <p>Use the code below to complete your login. Valid for <strong>10 minutes</strong>.</p>
-      <div class="otp-box">
-        <div class="otp-label">Your One-Time Password</div>
-        <div class="otp-code">${otp}</div>
-        <div class="otp-exp">⏰ Expires in 10 minutes</div>
-      </div>
-      <div class="warn">🔒 Never share this code. Radhana Art will never ask for your OTP.</div>
     `),
   }),
 
