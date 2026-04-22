@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 import config from "../config/config.js";
-import logo from "../../frontend/Assets/radhana-logo.png";
+const logo = "https://radhana.com.np/assets/radhanalogo.png";
 
 const resend = new Resend(config.emailApiKey);
 
