@@ -2,6 +2,7 @@ import productsService from "../services/productsService.js";
 
 const getProducts = async (req, res) => {
   try {
+    
     const products = await productsService.getAllProducts(req.query);
     res.json(products);
   } catch (error) {

@@ -9,7 +9,7 @@ const getAllProducts = async (query) => {
     cat,
     min,
     max,
-    limit = 50,
+    limit = 200,
     offset = 0,
     name,
     type,
