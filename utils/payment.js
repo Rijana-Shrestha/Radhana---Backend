@@ -3,71 +3,6 @@ import config from "../config/config.js";
 import crypto from "crypto";
 import { parseStringPromise } from "xml2js";
 
-// ── KHALTI ────────────────────────────────────────────────────
-const payViaKhalti = async (data) => {
-  if (!config.khalti.apiKey)
-    throw {
-      statusCode: 500,
-      message:
-        "Khalti API key not configured. Set KHALTI_API_KEY in environment.",
-    };
-
-  const body = {
-    return_url: config.khalti.returnUrl,
-    website_url: config.frontendUrl,
-    amount: Math.round(data.amount), // in paisa
-    purchase_order_id: data.purchaseOrderId,
-    purchase_order_name: data.purchaseOrderName,
-    customer_info: {
-      name: data.customer.name,
-      email: data.customer.email,
-      phone: data.customer.phone,
-    },
-  };
-
-  try {
-    const response = await axios.post(
-      `${config.khalti.apiUrl}/epayment/initiate/`,
-      body,
-      {
-        headers: {
-          Authorization: `Key ${config.khalti.apiKey}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-    return response.data;
-  } catch (err) {
-    const msg = err.response?.data
-      ? JSON.stringify(err.response.data)
-      : err.message;
-    throw { statusCode: 500, message: `Khalti initiate failed: ${msg}` };
-  }
-};
-
-const verifyKhaltiPayment = async (pidx) => {
-  if (!config.khalti.apiKey)
-    throw { statusCode: 500, message: "Khalti API key not configured." };
-  try {
-    const response = await axios.post(
-      `${config.khalti.apiUrl}/epayment/lookup/`,
-      { pidx },
-      {
-        headers: {
-          Authorization: `Key ${config.khalti.apiKey}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-    return response.data;
-  } catch (err) {
-    const msg = err.response?.data
-      ? JSON.stringify(err.response.data)
-      : err.message;
-    throw { statusCode: 500, message: `Khalti lookup failed: ${msg}` };
-  }
-};
-
 // ── FONEPAY ───────────────────────────────────────────────────
 // Docs flow:
 // 1. Build payment params (PID, MD, PRN, AMT, CRN, DT, R1, R2, RU)
@@ -230,8 +165,6 @@ const verifyFonepayWebPayment = async (params) => {
 };
 
 export default {
-  payViaKhalti,
-  verifyKhaltiPayment,
   initiateFonepay,
   validateFonepayCallback,
   verifyFonepayWebPayment,

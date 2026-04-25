@@ -14,10 +14,6 @@ router.put("/:id", roleBasedAuth(ADMIN), orderController.updateOrder);
 router.delete("/:id", orderController.deleteOrder);
 
 // ── Payment routes ─────────────────────────────────────────
-// Khalti
-router.post("/:id/payment/khalti", orderController.orderPaymentViaKhalti);
-router.get("/:id/verify-khalti", orderController.verifyKhaltiPayment);
-
 // Fonepay
 router.post("/:id/payment/fonepay", orderController.orderPaymentViaFonepay);
 // Fonepay callback: orderId is extracted from PRN query param

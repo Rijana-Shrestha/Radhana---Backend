@@ -79,32 +79,6 @@ const deleteOrder = async (req, res) => {
   }
 };
 
-// ── KHALTI: initiate ─────────────────────────────────────────
-const orderPaymentViaKhalti = async (req, res) => {
-  try {
-    res.json(await orderService.orderPayment(req.params.id, req.user));
-  } catch (e) {
-    res.status(e.statusCode || 500).json({ message: e.message });
-  }
-};
-
-// ── KHALTI: verify (called after Khalti redirects user back) ──
-// GET /api/orders/:id/verify-khalti?pidx=xxx
-const verifyKhaltiPayment = async (req, res) => {
-  try {
-    const { pidx } = req.query;
-    if (!pidx) return res.status(400).json({ message: "pidx is required." });
-    const data = await orderService.verifyKhaltiPayment(
-      pidx,
-      req.params.id,
-      req.user,
-    );
-    res.json(data);
-  } catch (e) {
-    res.status(e.statusCode || 500).json({ message: e.message });
-  }
-};
-
 // ── FONEPAY: initiate ─────────────────────────────────────────
 const orderPaymentViaFonepay = async (req, res) => {
   try {
@@ -164,8 +138,6 @@ export default {
   createOrder,
   updateOrder,
   deleteOrder,
-  orderPaymentViaKhalti,
-  verifyKhaltiPayment,
   orderPaymentViaFonepay,
   verifyFonepayPayment,
   confirmOrderPayment,

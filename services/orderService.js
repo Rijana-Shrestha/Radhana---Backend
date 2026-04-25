@@ -163,78 +163,6 @@ const finalizePayment = async ({
   return confirmedOrder;
 };
 
-// ── KHALTI: Step 1 — Initiate ─────────────────────────────────
-const orderPayment = async (id, user) => {
-  const order = await getOrderById(id);
-  if (order.user._id.toString() !== user._id.toString())
-    throw { statusCode: 403, message: "Access Denied." };
-
-  // Prevent re-initiating if already paid
-  if (order.payment) {
-    const existingPayment = await Payment.findById(order.payment);
-    if (existingPayment?.status === PAYMENT_STATUS_COMPLETED)
-      throw { statusCode: 409, message: "This order has already been paid." };
-  }
-
-  const transactionId = crypto.randomUUID();
-  const orderPaymentDoc = await Payment.create({
-    amount: order.totalPrice,
-    method: "khalti",
-    transactionId,
-  });
-
-  await Order.findByIdAndUpdate(id, { payment: orderPaymentDoc._id });
-
-  const khaltiData = await paymentUtil.payViaKhalti({
-    amount: order.totalPrice * 100, // paisa
-    purchaseOrderId: order._id.toString(),
-    purchaseOrderName: order.orderNumber,
-    customer: {
-      name:
-        order.shippingAddress.firstName + " " + order.shippingAddress.lastName,
-      email: order.shippingAddress.email,
-      phone: order.shippingAddress.phone,
-    },
-  });
-
-  await Payment.findByIdAndUpdate(orderPaymentDoc._id, {
-    pidx: khaltiData.pidx,
-  });
-
-  return {
-    payment_url: khaltiData.payment_url,
-    pidx: khaltiData.pidx,
-    orderId: id,
-  };
-};
-
-// ── KHALTI: Step 2 — Verify ───────────────────────────────────
-const verifyKhaltiPayment = async (pidx, orderId, user) => {
-  const order = await getOrderById(orderId);
-  if (order.user._id.toString() !== user._id.toString())
-    throw { statusCode: 403, message: "Access Denied." };
-
-  const khaltiResponse = await paymentUtil.verifyKhaltiPayment(pidx);
-
-  if (khaltiResponse.status !== "Completed") {
-    await Payment.findByIdAndUpdate(order.payment._id, {
-      status: PAYMENT_STATUS_FAILED,
-    });
-    throw {
-      statusCode: 400,
-      message: `Payment ${khaltiResponse.status}. Please try again.`,
-    };
-  }
-
-  return await finalizePayment({
-    order,
-    paymentId: order.payment._id,
-    method: "khalti",
-    transactionId: khaltiResponse.transaction_id,
-    gatewayResponse: khaltiResponse, // full Khalti lookup response saved
-  });
-};
-
 // ── FONEPAY: Step 1 — Initiate ────────────────────────────────
 const orderPaymentFonepay = async (id, user) => {
   const order = await getOrderById(id);
@@ -352,8 +280,6 @@ export default {
   createOrder,
   updateOrder,
   deleteOrder,
-  orderPayment,
-  verifyKhaltiPayment,
   orderPaymentFonepay,
   verifyFonepayPayment,
   confirmOrderPayment,
