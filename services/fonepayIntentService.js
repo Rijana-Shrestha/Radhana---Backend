@@ -1,186 +1,271 @@
 /**
- * services/fonepayIntentService.js
+ * fonepayIntentService.js
  *
- * Fonepay Intent / Dynamic QR — V1.9
+ * Implements the Fonepay Intent / Dynamic QR flow (V1.9 spec).
  *
- * CORRECT URLs (from Postman collection — these differ from the PDF!):
- *   UAT base : https://dev-external-gateway-new.fonepay.com/merchantThirdparty
- *   basePath : /api/merchant/third-party/v2
- *   Login    : POST {base}{path}/login
- *   Banks    : GET  {base}{path}/banks/list
- *   Gen QR   : POST {base}{path}/generate-intent-qr
- *   Status   : POST {base}{path}/thirdPartyDynamicQrGetStatus
+ * Flow:
+ *  1. oAuth login  →  get Bearer token (cached until expiry)
+ *  2. Get bank list (optional — cached 30 min)
+ *  3. Generate Intent QR  →  get qrMessage + websocketId
+ *  4. Front-end opens WebSocket to websocketId and listens
+ *  5. On WebSocket payment event  →  call checkPaymentStatus to verify
+ *  6. On success  →  call orderService.finalizePayment (reuses existing logic)
  *
- * Signature: RSA-SHA1, sign the raw JSON body string, Base64-encode result.
+ * Signature algorithm: RSA-SHA1, Base64-encoded (per Fonepay PKI spec).
+ * All request bodies are JSON-stringified and signed before sending.
  */
 
 import axios from "axios";
 import crypto from "crypto";
 import config from "../config/config.js";
 
-// ── In-memory caches ─────────────────────────────────────────────────────────
+// ── Token cache (in-memory, one instance per process) ──────────────────────
 let _tokenCache = { token: null, expiresAt: 0 };
-let _bankCache = { banks: null, cachedAt: 0 };
-const BANK_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
-const TOKEN_TTL_MS = 55 * 60 * 1000; // 55 min (refresh before expiry)
 
-// ── Base URL builder ─────────────────────────────────────────────────────────
-const base = () =>
+// ── Bank list cache (30 min) ────────────────────────────────────────────────
+let _bankCache = { banks: null, cachedAt: 0 };
+const BANK_CACHE_TTL_MS = 30 * 60 * 1000;
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Build the base URL for intent API calls.
+ * UAT:  https://uat-new-merchantapi.fonepay.com/api/merchant/merchantDetailsForThirdParty/v2
+ * Prod: https://new-merchantapi.fonepay.com/api/merchant/merchantDetailsForThirdParty/v2
+ */
+const intentBase = () =>
   `${config.fonepayIntent.baseUrl}${config.fonepayIntent.basePath}`;
 
-// ── RSA-SHA1 signature ───────────────────────────────────────────────────────
-// Sign the entire raw JSON body string.
-// PEM newlines may be lost in env vars — restore them if needed.
-const sign = (payloadString) => {
-  const key = config.fonepayIntent.privateKey;
-  if (!key) throw new Error("FONEPAY_INTENT_PRIVATE_KEY is not set");
+/**
+ * Generate RSA-SHA1 signature over a JSON payload string.
+ * Fonepay requires:
+ *   - Sign the entire JSON body string
+ *   - Use your RSA private key
+ *   - Base64-encode the result
+ */
+const generateSignature = (payloadString) => {
+  const rawKey = config.fonepayIntent.privateKey;
+  if (!rawKey) throw new Error("FONEPAY_INTENT_PRIVATE_KEY not configured");
 
-  // Restore newlines if the key was stored with escaped \n in env
-  let pem = key.replace(/\\n/g, "\n");
+  // Fonepay wants raw Base64 key WITHOUT PEM headers (per Postman collection spec)
+  // Strip headers/footers and newlines if someone pasted full PEM by mistake
+  const stripped = rawKey
+    .replace(/-----BEGIN.*?-----/g, "")
+    .replace(/-----END.*?-----/g, "")
+    .replace(/\s+/g, "");
 
-  // If no PEM header, wrap it
-  if (!pem.includes("-----BEGIN")) {
-    pem = `-----BEGIN PRIVATE KEY-----\n${pem}\n-----END PRIVATE KEY-----`;
-  }
+  // Rebuild as proper PEM so Node crypto can use it
+  const pem = `-----BEGIN PRIVATE KEY-----
+${stripped.match(/.{1,64}/g).join("\n")}
+-----END PRIVATE KEY-----`;
 
   const signer = crypto.createSign("RSA-SHA1");
   signer.update(payloadString, "utf8");
   return signer.sign(pem, "base64");
 };
 
-// ── Basic Auth header for login ──────────────────────────────────────────────
-const basicAuth = () => {
+/**
+ * Build the Basic Auth header from username + password.
+ * Fonepay oAuth uses HTTP Basic Auth on the login endpoint.
+ */
+const basicAuthHeader = () => {
   const { username, password } = config.fonepayIntent;
   if (!username || !password)
     throw new Error(
-      "FONEPAY_INTENT_USERNAME or FONEPAY_INTENT_PASSWORD not set",
+      "FONEPAY_INTENT_USERNAME / FONEPAY_INTENT_PASSWORD not configured",
     );
-  return "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+  const encoded = Buffer.from(`${username}:${password}`).toString("base64");
+  return `Basic ${encoded}`;
 };
 
-// ── 1. oAuth Login ────────────────────────────────────────────────────────────
+// ── 1. oAuth Login ───────────────────────────────────────────────────────────
+/**
+ * Logs in to the Fonepay Intent API and caches the Bearer token.
+ * The token is reused until it expires (we assume ~55 min validity;
+ * adjust TOKEN_TTL_MS if Fonepay specifies a different window).
+ *
+ * POST /login
+ * Headers: Authorization: Basic <base64(user:pass)>, Signature: <sig>
+ * Body: { username, password }
+ */
+const TOKEN_TTL_MS = 55 * 60 * 1000; // 55 minutes
+
 const getAccessToken = async () => {
-  if (_tokenCache.token && Date.now() < _tokenCache.expiresAt)
+  // Return cached token if still valid
+  if (_tokenCache.token && Date.now() < _tokenCache.expiresAt) {
     return _tokenCache.token;
+  }
 
   const { username, password } = config.fonepayIntent;
   const body = { username, password };
-  const payload = JSON.stringify(body);
+  const payloadString = JSON.stringify(body);
+  const signature = generateSignature(payloadString);
 
-  const res = await axios.post(`${base()}/login`, body, {
+  const url = `${intentBase()}/login`;
+
+  const response = await axios.post(url, body, {
     headers: {
       "Content-Type": "application/json",
-      Authorization: basicAuth(),
-      signature: sign(payload),
+      Authorization: basicAuthHeader(),
+      Signature: signature,
     },
     timeout: 15000,
   });
 
-  const token = res.data?.accessToken;
-  if (!token) throw new Error("Fonepay login: no accessToken in response");
+  const accessToken = response.data?.accessToken;
+  if (!accessToken)
+    throw new Error("Fonepay oAuth: no accessToken in response");
 
-  _tokenCache = { token, expiresAt: Date.now() + TOKEN_TTL_MS };
+  // Cache it
+  _tokenCache = { token: accessToken, expiresAt: Date.now() + TOKEN_TTL_MS };
   console.log("[FonepayIntent] Token refreshed");
-  return token;
+  return accessToken;
 };
 
-// ── 2. Get Bank List ──────────────────────────────────────────────────────────
+// ── 2. Get Bank List ─────────────────────────────────────────────────────────
+/**
+ * Returns the list of banks that support Fonepay Intent checkout.
+ * Result is cached for 30 minutes — bank list rarely changes.
+ *
+ * GET /banks/list
+ * Headers: Authorization: Bearer <token>, Signature: <sig>, paymentMode: INTENT
+ */
 const getBankList = async (customerMobile = "") => {
-  if (_bankCache.banks && Date.now() - _bankCache.cachedAt < BANK_CACHE_TTL_MS)
+  // Return cached list if fresh
+  if (
+    _bankCache.banks &&
+    Date.now() - _bankCache.cachedAt < BANK_CACHE_TTL_MS
+  ) {
     return _bankCache.banks;
+  }
 
   const token = await getAccessToken();
 
+  // Signature for GET: sign an empty JSON object string
+  const signature = generateSignature("{}");
+
+  const url = `${intentBase()}/banks/list`;
+
   const headers = {
     "Content-Type": "application/json",
-    Authorization: token, // Fonepay returns token with "Bearer " prefix already
-    signature: sign(""), // GET has no body — sign empty string
+    Authorization: token, // already contains "Bearer " prefix from Fonepay response
+    Signature: signature,
     paymentMode: "INTENT",
   };
   if (customerMobile) headers.mobileNo = customerMobile;
 
-  const res = await axios.get(`${base()}/banks/list`, {
-    headers,
-    timeout: 15000,
-  });
-  const banks = res.data?.bankDetails || [];
+  const response = await axios.get(url, { headers, timeout: 15000 });
+  const banks = response.data?.bankDetails || [];
+
   _bankCache = { banks, cachedAt: Date.now() };
   return banks;
 };
 
-// ── 3. Generate Intent QR ─────────────────────────────────────────────────────
+// ── 3. Generate Intent QR ────────────────────────────────────────────────────
+/**
+ * Calls the Fonepay Intent QR generation API.
+ * Returns: { qrString, qrMessage, websocketId, prn, terminalId, ... }
+ *
+ * referenceLabel must be unique per transaction (alphanumeric, max 30 chars).
+ *
+ * POST /generate-intent-qr
+ */
 const generateIntentQR = async ({ amount, orderId, orderNumber }) => {
   const token = await getAccessToken();
-  const terminalId = config.fonepayIntent.terminalId;
-  if (!terminalId) throw new Error("FONEPAY_INTENT_TERMINAL_ID not set");
+  const { terminalId } = config.fonepayIntent;
 
-  // referenceLabel: alphanumeric only, max 30 chars, must be unique per transaction
-  // "FPI" + 24-char Mongo ObjectId = 27 chars — safe
+  if (!terminalId) throw new Error("FONEPAY_INTENT_TERMINAL_ID not configured");
+
+  // referenceLabel: alphanumeric only, max 30 chars, must be unique
+  // We use orderId (Mongo ObjectId = 24 hex chars) — safe and unique
   const referenceLabel = `FPI${orderId}`.slice(0, 30);
 
   const body = {
-    amount: parseFloat(Number(amount).toFixed(2)),
-    billId: orderNumber,
+    amount: Number(amount).toFixed(2),
+    billId: orderNumber, // shown in banking app
     terminalId,
     paymentMode: "QR",
     referenceLabel,
     qrType: "INTENT_QR",
   };
-  const payload = JSON.stringify(body);
 
-  const res = await axios.post(`${base()}/generate-intent-qr`, body, {
+  const payloadString = JSON.stringify(body);
+  const signature = generateSignature(payloadString);
+
+  const url = `${intentBase()}/generate-intent-qr`;
+
+  const response = await axios.post(url, body, {
     headers: {
       "Content-Type": "application/json",
       Authorization: token,
-      signature: sign(payload),
+      Signature: signature,
     },
     timeout: 20000,
   });
 
-  const data = res.data;
+  const data = response.data;
+
   if (data.status !== "Success")
     throw new Error(`Fonepay QR generation failed: ${JSON.stringify(data)}`);
 
   return {
     qrString: data.qrString,
-    qrMessage: data.qrMessage, // render this as QR on frontend
-    websocketId: data.websocketId, // ws:// — frontend connects here
-    prn: data.prn, // same as referenceLabel
+    qrMessage: data.qrMessage, // same as qrString — use this for deep link
+    websocketId: data.websocketId, // ws:// URL — front-end listens here
+    prn: data.prn, // == referenceLabel — use for status check
     terminalId: data.fonepayPanNumber || terminalId,
     displayName: data.qrDisplayName,
     referenceLabel,
   };
 };
 
-// ── 4. Check Payment Status ───────────────────────────────────────────────────
+// ── 4. Check Payment Status ──────────────────────────────────────────────────
+/**
+ * Polls the Fonepay status API for a given transaction.
+ * Call this AFTER the WebSocket fires OR as a fallback poll.
+ *
+ * POST /thirdPartyDynamicQrGetStatus
+ * Returns: { paymentStatus: "success"|"pending"|"failed", ... }
+ */
 const checkPaymentStatus = async ({ referenceLabel, terminalId }) => {
   const token = await getAccessToken();
   const tid = terminalId || config.fonepayIntent.terminalId;
 
   const body = { terminalId: tid, referenceLabel };
-  const payload = JSON.stringify(body);
+  const payloadString = JSON.stringify(body);
+  const signature = generateSignature(payloadString);
 
-  const res = await axios.post(`${base()}/thirdPartyDynamicQrGetStatus`, body, {
+  const url = `${intentBase()}/thirdPartyDynamicQrGetStatus`;
+
+  const response = await axios.post(url, body, {
     headers: {
       "Content-Type": "application/json",
       Authorization: token,
-      signature: sign(payload),
+      Signature: signature,
     },
     timeout: 15000,
   });
 
-  return res.data;
+  return response.data;
+  // Shape: { prn, merchantCode, paymentStatus, fonepayTraceId,
+  //          requestedAmount, totalTransactionAmount, paymentMessage }
 };
 
-// ── 5. Parse WebSocket message ────────────────────────────────────────────────
-// transactionStatus is a JSON string embedded inside the outer JSON object
-const parseWebSocketMessage = (raw) => {
+// ── 5. Parse WebSocket message ───────────────────────────────────────────────
+/**
+ * Parses the raw WebSocket JSON message from Fonepay.
+ * transactionStatus is a JSON string inside the outer JSON — double-parse it.
+ *
+ * Returns { isPaymentSuccess, isVerified, raw }
+ */
+const parseWebSocketMessage = (rawMessage) => {
   try {
-    const outer = JSON.parse(raw);
+    const outer = JSON.parse(rawMessage);
     const inner =
       typeof outer.transactionStatus === "string"
         ? JSON.parse(outer.transactionStatus)
         : outer.transactionStatus || {};
+
     return {
       isPaymentSuccess: inner.paymentSuccess === true,
       isVerified: inner.QRVerified === true,
@@ -188,12 +273,12 @@ const parseWebSocketMessage = (raw) => {
       raw: inner,
     };
   } catch (e) {
-    console.error("[FonepayIntent] WS parse error:", e.message);
+    console.error("[FonepayIntent] WebSocket parse error:", e.message);
     return { isPaymentSuccess: false, isVerified: false, raw: {} };
   }
 };
 
-// ── Invalidate token (call on 401 from Fonepay) ───────────────────────────────
+// ── Invalidate token cache (call on 401 errors) ──────────────────────────────
 const invalidateToken = () => {
   _tokenCache = { token: null, expiresAt: 0 };
 };
