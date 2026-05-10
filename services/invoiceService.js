@@ -3,9 +3,14 @@ import Order from "../models/Order.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const generateInvoiceNumber = async (type) => {
-  const prefix = type === "quotation" ? "QT" : "INV";
-  const count = await Invoice.countDocuments({ type });
-  return `${prefix}-${Math.floor(1000 + Math.random() * 9000)}-${count + 1}`;
+  if (type === "quotation") {
+    // Quotations keep their own sequence: QT-5001, QT-5002 ...
+    const count = await Invoice.countDocuments({ type: "quotation" });
+    return `QT-${5000 + count + 1}`;
+  }
+  // Tax invoices: RA-5001, RA-5002 ... (starts at 5001)
+  const count = await Invoice.countDocuments({ type: { $ne: "quotation" } });
+  return `RA-${5000 + count + 1}`;
 };
 
 const computeTotals = (
