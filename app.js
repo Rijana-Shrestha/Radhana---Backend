@@ -15,6 +15,7 @@ import invoiceRoutes from "./routes/invoiceRoute.js";
 import cartRoutes from "./routes/cartRoute.js";
 import adminRoutes from "./routes/adminRoute.js";
 import categoryRoutes from "./routes/categoryRoute.js";
+import fonepayIntentRoutes from "./routes/fonepayIntentRoute.js";
 import bodyParser from "body-parser";
 import logger from "./middlewares/logger.js";
 import auth from "./middlewares/auth.js";
@@ -68,6 +69,7 @@ app.use("/api/invoices", auth, invoiceRoutes);
 app.use("/api/cart", auth, cartRoutes);
 app.use("/api/admin", auth, adminRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/fonepay-intent", auth, fonepayIntentRoutes);
 
 // Gallery accepts multiple files + text fields
 app.use(

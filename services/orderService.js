@@ -283,4 +283,6 @@ export default {
   orderPaymentFonepay,
   verifyFonepayPayment,
   confirmOrderPayment,
+  // Exposed for fonepayIntentOrderService — same finalizePayment logic
+  finalizePaymentPublic: finalizePayment,
 };

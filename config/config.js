@@ -48,6 +48,42 @@ const config = {
       `${frontendUrl}/#/payment/fonepay-verify`,
   },
 
+  // ── Fonepay Intent / Dynamic QR (V1.9) ──────────────────────────────────
+  // Different credentials from the old PG redirect flow.
+  // Fonepay provides: username, password, terminalId, RSA private key.
+  fonepayIntent: {
+    username: process.env.FONEPAY_INTENT_USERNAME || "",
+    password: process.env.FONEPAY_INTENT_PASSWORD || "",
+    terminalId: process.env.FONEPAY_INTENT_TERMINAL_ID || "",
+    // RSA private key — paste as-is (multi-line PEM) or set as env var
+    // On Render: add as a secret env var, preserve newlines
+    privateKey: process.env.FONEPAY_INTENT_PRIVATE_KEY || "",
+    // UAT: https://uat-new-merchantapi.fonepay.com
+    // Prod: https://new-merchantapi.fonepay.com
+    baseUrl:
+      process.env.FONEPAY_INTENT_BASE_URL ||
+      "https://uat-new-merchantapi.fonepay.com",
+    basePath: "/api/merchant/merchantDetailsForThirdParty/v2",
+  },
+
+  // ── Fonepay Intent / Dynamic QR (V1.9) ──────────────────────────────────
+  // DIFFERENT from the old fonepay PG redirect — these are new credentials.
+  // Fonepay will provide: username, password, terminalId, RSA private key.
+  fonepayIntent: {
+    username: process.env.FONEPAY_INTENT_USERNAME || "",
+    password: process.env.FONEPAY_INTENT_PASSWORD || "",
+    terminalId: process.env.FONEPAY_INTENT_TERMINAL_ID || "",
+    // Full RSA private key PEM — store in Render env var, preserve newlines
+    privateKey: process.env.FONEPAY_INTENT_PRIVATE_KEY || "",
+    // UAT base URL (from Postman collection — NOTE: different from the PDF URL)
+    // UAT  : https://dev-external-gateway-new.fonepay.com/merchantThirdparty
+    // Prod : https://merchantapi.fonepay.com/merchantThirdparty  (get from Fonepay)
+    baseUrl:
+      process.env.FONEPAY_INTENT_BASE_URL ||
+      "https://dev-external-gateway-new.fonepay.com/merchantThirdparty",
+    basePath: "/api/merchant/third-party/v2",
+  },
+
   emailApiKey: process.env.EMAIL_API_KEY || "",
   adminEmail: process.env.ADMIN_EMAIL || "radhanaart@gmail.com",
 };
