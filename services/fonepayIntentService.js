@@ -44,24 +44,13 @@ const intentBase = () =>
  *   - Base64-encode the result
  */
 const generateSignature = (payloadString) => {
-  const rawKey = config.fonepayIntent.privateKey;
-  if (!rawKey) throw new Error("FONEPAY_INTENT_PRIVATE_KEY not configured");
+  const privateKey = config.fonepayIntent.privateKey;
+  if (!privateKey) throw new Error("FONEPAY_INTENT_PRIVATE_KEY not configured");
 
-  // Fonepay wants raw Base64 key WITHOUT PEM headers (per Postman collection spec)
-  // Strip headers/footers and newlines if someone pasted full PEM by mistake
-  const stripped = rawKey
-    .replace(/-----BEGIN.*?-----/g, "")
-    .replace(/-----END.*?-----/g, "")
-    .replace(/\s+/g, "");
-
-  // Rebuild as proper PEM so Node crypto can use it
-  const pem = `-----BEGIN PRIVATE KEY-----
-${stripped.match(/.{1,64}/g).join("\n")}
------END PRIVATE KEY-----`;
-
-  const signer = crypto.createSign("RSA-SHA1");
-  signer.update(payloadString, "utf8");
-  return signer.sign(pem, "base64");
+  // Fonepay uses SHA1withRSA (RSA-SHA1) per their sample data
+  const sign = crypto.createSign("RSA-SHA1");
+  sign.update(payloadString, "utf8");
+  return sign.sign(privateKey, "base64");
 };
 
 /**
@@ -107,7 +96,7 @@ const getAccessToken = async () => {
     headers: {
       "Content-Type": "application/json",
       Authorization: basicAuthHeader(),
-      Signature: signature,
+      signature: signature,
     },
     timeout: 15000,
   });
@@ -142,14 +131,14 @@ const getBankList = async (customerMobile = "") => {
   const token = await getAccessToken();
 
   // Signature for GET: sign an empty JSON object string
-  const signature = generateSignature("{}");
+  const signature = generateSignature("");
 
   const url = `${intentBase()}/banks/list`;
 
   const headers = {
     "Content-Type": "application/json",
     Authorization: token, // already contains "Bearer " prefix from Fonepay response
-    Signature: signature,
+    signature: signature,
     paymentMode: "INTENT",
   };
   if (customerMobile) headers.mobileNo = customerMobile;
@@ -198,7 +187,7 @@ const generateIntentQR = async ({ amount, orderId, orderNumber }) => {
     headers: {
       "Content-Type": "application/json",
       Authorization: token,
-      Signature: signature,
+      signature: signature,
     },
     timeout: 20000,
   });
@@ -241,7 +230,7 @@ const checkPaymentStatus = async ({ referenceLabel, terminalId }) => {
     headers: {
       "Content-Type": "application/json",
       Authorization: token,
-      Signature: signature,
+      signature: signature,
     },
     timeout: 15000,
   });
