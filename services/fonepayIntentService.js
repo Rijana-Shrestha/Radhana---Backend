@@ -1,3 +1,20 @@
+/**
+ * fonepayIntentService.js
+ *
+ * Implements the Fonepay Intent / Dynamic QR flow (V1.9 spec).
+ *
+ * Flow:
+ *  1. oAuth login  →  get Bearer token (cached until expiry)
+ *  2. Get bank list (optional — cached 30 min)
+ *  3. Generate Intent QR  →  get qrMessage + websocketId
+ *  4. Front-end opens WebSocket to websocketId and listens
+ *  5. On WebSocket payment event  →  call checkPaymentStatus to verify
+ *  6. On success  →  call orderService.finalizePayment (reuses existing logic)
+ *
+ * Signature algorithm: RSA-SHA1, Base64-encoded (per Fonepay PKI spec).
+ * All request bodies are JSON-stringified and signed before sending.
+ */
+
 import axios from "axios";
 import crypto from "crypto";
 import config from "../config/config.js";
