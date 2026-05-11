@@ -44,15 +44,43 @@ const intentBase = () =>
  *   - Base64-encode the result
  */
 const generateSignature = (payloadString) => {
-  const privateKey = config.fonepayIntent.privateKey;
-  if (!privateKey) throw new Error("FONEPAY_INTENT_PRIVATE_KEY not configured");
+  const rawKey = config.fonepayIntent.privateKey;
+  if (!rawKey) throw new Error("FONEPAY_INTENT_PRIVATE_KEY not configured");
 
-  // Fonepay uses SHA1withRSA (RSA-SHA1) per their sample data
-  const sign = crypto.createSign("RSA-SHA1");
-  sign.update(payloadString, "utf8");
-  return sign.sign(privateKey, "base64");
+  // Strip any PEM headers/footers and all whitespace to get pure Base64
+  const stripped = rawKey
+    .replace(/-----BEGIN[^-]*-----/g, "")
+    .replace(/-----END[^-]*-----/g, "")
+    .replace(/[\s]+/g, "")
+    .trim();
+
+  // Rebuild into 64-char line PEM chunks
+  const lines = stripped.match(/.{1,64}/g) || [];
+
+  // Fonepay sample key is PKCS8 format (BEGIN PRIVATE KEY)
+  const pem =
+    "-----BEGIN PRIVATE KEY-----\n" +
+    lines.join("\n") +
+    "\n-----END PRIVATE KEY-----";
+
+  try {
+    const signer = crypto.createSign("RSA-SHA1");
+    signer.update(payloadString, "utf8");
+    return signer.sign({ key: pem, format: "pem", type: "pkcs8" }, "base64");
+  } catch (e) {
+    // Fallback to PKCS1 format
+    const pemPkcs1 =
+      "-----BEGIN RSA PRIVATE KEY-----\n" +
+      lines.join("\n") +
+      "\n-----END RSA PRIVATE KEY-----";
+    const signer2 = crypto.createSign("RSA-SHA1");
+    signer2.update(payloadString, "utf8");
+    return signer2.sign(
+      { key: pemPkcs1, format: "pem", type: "pkcs1" },
+      "base64",
+    );
+  }
 };
-
 /**
  * Build the Basic Auth header from username + password.
  * Fonepay oAuth uses HTTP Basic Auth on the login endpoint.
