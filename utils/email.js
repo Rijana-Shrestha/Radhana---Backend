@@ -10,7 +10,7 @@ const BRAND = {
   dark: "#1a1a2e",
   name: "Radhana Art",
   tagline: "Laser Engraving · Kathmandu, Nepal",
-  phone: "+977 9823939106",
+  phone: "+977 9860031044",
   email: "info@radhana.com.np",
   address: "Sitapaila, Kathmandu, Nepal",
   website: "https://radhana.com.np",
@@ -61,7 +61,7 @@ a{color:${BRAND.primary};}
   <a href="mailto:${BRAND.email}">${BRAND.email}</a></p>
   <div class="social" style="margin:14px 0;">
     <a href="${BRAND.website}">🌐 Website</a>
-    <a href="https://wa.me/9779823939106">💬 WhatsApp</a>
+    <a href="https://wa.me/9779860031044">💬 WhatsApp</a>
   </div>
   <p style="margin-top:14px;font-size:11px;">© ${new Date().getFullYear()} ${BRAND.name}. All rights reserved.</p>
 </div>
@@ -83,7 +83,7 @@ export const templates = {
         <span>💬 WhatsApp us anytime for help</span>
       </div>
       <div class="btn-wrap">
-        <a href="https://wa.me/9779823939106" class="btn" style="background:linear-gradient(135deg,#25d366,#128c7e);">💬 Chat on WhatsApp</a>
+        <a href="https://wa.me/9779860031044" class="btn" style="background:linear-gradient(135deg,#25d366,#128c7e);">💬 Chat on WhatsApp</a>
       </div>
     `),
   }),
@@ -155,7 +155,7 @@ export const templates = {
         <span>💬 Or WhatsApp us for a faster response</span>
       </div>
       <div class="btn-wrap">
-        <a href="https://wa.me/9779823939106?text=Hi%2C%20I%20sent%20a%20message%20about%20${encodeURIComponent(subject)}" class="btn">💬 Chat on WhatsApp</a>
+        <a href="https://wa.me/9779860031044?text=Hi%2C%20I%20sent%20a%20message%20about%20${encodeURIComponent(subject)}" class="btn">💬 Chat on WhatsApp</a>
       </div>
     `),
   }),
