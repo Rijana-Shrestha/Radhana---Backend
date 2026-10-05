@@ -5,8 +5,14 @@ import Order from "../models/Order.js";
 const generateInvoiceNumber = async (type) => {
   if (type === "quotation") {
     // Quotations keep their own sequence: QT-5001, QT-5002 ...
-    const count = await Invoice.countDocuments({ type: "quotation" });
-    return `QT-${5000 + count + 1}`;
+    const invoiceNumbers = await Invoice.distinct("invoiceNumber", {
+      type: "quotation",
+    });
+    const lastNumber = invoiceNumbers.reduce((max, number) => {
+      const match = /^QT-(\d+)$/.exec(number);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 5000);
+    return `QT-${lastNumber + 1}`;
   }
   // Tax invoices: RA-5001, RA-5002 ... (starts at 5001)
   const count = await Invoice.countDocuments({ type: { $ne: "quotation" } });
@@ -126,10 +132,7 @@ const createInvoice = async (data, user) => {
         ? "paid"
         : "partial";
 
-  const invoiceNumber = await generateInvoiceNumber(type);
-
-  const invoice = await Invoice.create({
-    invoiceNumber,
+  const invoiceData = {
     type,
     order: orderId || null,
     billTo,
@@ -148,7 +151,25 @@ const createInvoice = async (data, user) => {
     termsAndConditions,
     invoiceDate: invoiceDate || new Date(),
     createdBy: user._id,
-  });
+  };
+
+  let invoice;
+  const maxAttempts = type === "quotation" ? 5 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const invoiceNumber = await generateInvoiceNumber(type);
+    try {
+      invoice = await Invoice.create({ ...invoiceData, invoiceNumber });
+      break;
+    } catch (error) {
+      if (
+        type !== "quotation" ||
+        error.code !== 11000 ||
+        attempt === maxAttempts - 1
+      ) {
+        throw error;
+      }
+    }
+  }
 
   // Update the order's isInvoiceGenerated flag if an orderId was provided
   if (orderId) {
